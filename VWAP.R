@@ -30,7 +30,6 @@ dailyRet <- Delt(Cl(mktdata),k=1,type="arithmetic") #Daily Returns
 #signal = price/vwap
 signal <- Cl(mktdata) / vwap
 signal[is.na(signal)] <- 1 #Setting to one means that no trade will occur for NA's
-#Stripping NA's caused all manner of problems in a previous post
 trade <- apply(signal,1, function(x) {if(x<lLim) { return (1) } else { if(x>uLim) { return(-1) } else { return (0) }}})
 
 #Calculate the P&L
