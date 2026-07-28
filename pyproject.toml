@@ -10,3 +10,9 @@ dependencies = [
     "plotly>=6.8.0",
     "vectorbt>=1.1.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.0",
+    "ty>=0.0.64",
+]
