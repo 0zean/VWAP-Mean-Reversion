@@ -208,16 +208,16 @@ families runner, fracdiff, Goertzel, quotes and option samplers, PBO.
     15:45, cumulative RTH volume and session VWAP to 15:45), and U14.
   - **Session close for every `decision="close"` strategy and for marking is the `1DayPrint` close**, in the
     backtest and in the live loop alike (the last 5Min bar's close differs from the print by ≈ 1 bp).
-  - **Frozen vintage.** The development-window cache is fetched once and frozen (`data/cache/vintage_2026-xx/`);
+  - **Frozen vintage.** The development-window cache is fetched once and frozen (`data/cache/vintage_2026-10/`, user decision 2026-10-20);
     live top-ups go to a separate cache. `adjustment=all` re-scales history at every ex-dividend date, so hashing
     a live cache would make identical configurations look like new cells every quarter.
   - Alpaca's Basic plan provides this history; it refuses SIP requests whose window ends inside the last 15
     minutes, which matters only for the live loop (U2, U13).
 - **Exogenous (point-in-time).** CBOE VIX close (`available_at` 16:20 ET: visible to a `close` decision made at
-  16:25 the same day, and to a `t1545` decision only as the previous session's value); FRED `DTB3` (cash yield;
+  16:25 the same day, and to a `t1545` decision only as the previous session's value); FRED `DTB3` via the FRED API, key `FRED_API_KEY` in `.env` (fredgraph.csv times out from this machine; cash yield;
   H.15 rule, next business day 16:30). Nothing else until a unit needs it.
-- **Secondary daily history (`diag`).** SPY daily OHLCV 1993-01-29 → 2015-12-31 from a free source (default Stooq;
-  alternative Tiingo; **§9.1**), ratio-spliced to Alpaca at 2016-01-04 after verifying the overlap ratio is
+- **Secondary daily history (`diag`).** SPY daily OHLCV 1993-01-29 → 2015-12-31 from a free source (**Yahoo chart API**,
+  §9.1 as amended 2026-10-20), ratio-spliced to Alpaca at 2016-01-04 after verifying the overlap ratio is
   constant to rounding (close correlation > 0.9999). Uses: (i) the reproduction of the README claim from 2007,
   (ii) reversal-structure diagnostics and the H2 long-sample tables, (iii) **warm-up** of trailing windows and
   regime-model fits so that every gate and weight exists from 2016-01-04 (an HMM fitted on 1,008 sessions needs
@@ -948,8 +948,9 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 
 ## 9. Decisions needed from the user (defaults in bold)
 
-1. **Secondary daily source for 1993–2015** (`diag`, also used for estimator warm-up): **Stooq (free CSV, no
-   key)** / Tiingo (free key) / none (then H2's long tables, the warm-up and the long-sample power rows are lost
+1. **Secondary daily source for 1993–2015** (`diag`, also used for estimator warm-up): **answered 2026-10-20: Yahoo
+   chart API** (no key; the source `VWAP.R` used). Stooq was chosen first but now serves a JavaScript bot check
+   and cannot be fetched by a script. Other options were Tiingo (free key) / none (then H2's long tables, the warm-up and the long-sample power rows are lost
    and every gate starts ≈ 2020). Blocks U1.
 2. **Headline execution:** **`close` at 16:25 ET → `next_open` via OPG (Basic plan suffices)** / `t1545` → `moc`
    via CLS (captures the close-to-close reversal the R script assumed; needs a real-time SIP snapshot). Decided
@@ -993,6 +994,10 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
 
 ## 11. Handoff notes and amendments (newest first)
 
+- 2026-10-20 — U1 decisions (before code). §9.1: Stooq now serves a JavaScript bot check, so the user chose the
+  **Yahoo chart API** for `diag` (no key; also `VWAP.R`'s source). DTB3 comes from the **FRED API** with
+  `FRED_API_KEY` in `.env`, because fredgraph.csv times out from this machine (curl and requests). The frozen vintage
+  is **`vintage_2026-10`**. U1 runs on `unit/01-data`.
 - 2026-10-20 — U0 scaffold, protocol and hygiene. Branch `unit/00-scaffold` @ d623674. Done-when: 4/4 ticked
   (`results/reports/U00_status.md`). Looks: K was 0, is 1 (seed). Reviewer: BREAKING 0 / SEVERE 1 / MINOR 5
   (fixed 4, deferred 2: Windows read-during-append `PermissionError`, inherited from upstream; credentials
