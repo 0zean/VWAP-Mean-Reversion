@@ -1,0 +1,11 @@
+symbol,ex_date,amount,note
+SPY,2016-03-18,1.0496,"missing in Alpaca corporate actions; Yahoo 1.05; dividendvision.com/dividends/spy-dividend-history 1.0496 (checked 2026-10-20)"
+SPY,2018-06-15,1.24557,"missing in Alpaca; Yahoo 1.246; dividendvision.com 1.24557 (checked 2026-10-20)"
+SPY,2021-12-17,1.636431,"Alpaca 1.636431 vs Yahoo 1.633; dividendvision.com 1.63643 and YCharts 1.636 agree with Alpaca (checked 2026-10-20)"
+SPY,2025-12-19,1.99337,"missing in Alpaca; Yahoo 1.993; dividendvision.com 1.99337 (checked 2026-10-20)"
+QQQ,2018-06-18,0.37837,"Alpaca 0.37638 vs Yahoo 0.378; api.nasdaq.com QQQ dividend history 0.37837 (checked 2026-10-20)"
+QQQ,2020-09-21,0.38824,"missing in Yahoo; Alpaca 0.38824; api.nasdaq.com 0.38824 (checked 2026-10-20)"
+QQQ,2022-09-19,0.51856,"Alpaca 1.03712 (doubled) vs Yahoo 0.519; api.nasdaq.com 0.51856 (checked 2026-10-20)"
+DIA,2016-03-18,0.37486,"missing in Alpaca; Yahoo 0.375; dividendvision.com/dividends/dia-dividend-history 0.37486 (checked 2026-10-20)"
+DIA,2021-12-17,0.6639,"Alpaca 0.6639 vs Yahoo 0.662; dividendvision.com 0.6639 agrees with Alpaca (checked 2026-10-20)"
+DIA,2025-12-19,1.04445,"missing in Alpaca; Yahoo 1.044; dividendvision.com 1.04445 (checked 2026-10-20)"

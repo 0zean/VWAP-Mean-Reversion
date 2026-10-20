@@ -4,7 +4,11 @@
 Contract: credentials come from `credentials.credential` (ALPACA_API_KEY, ALPACA_API_SECRET), never logged; bars
 are stamped with the bar OPEN time in UTC (a 5Min bar stamped 14:30Z covers [14:30, 14:35) and is known at 14:35;
 a daily bar is stamped at the session's NY midnight); Alpaca's inclusive `end` is trimmed to `[start, end)`; a
-refused request raises (never a fall back to another feed)."""
+refused request raises (never a fall back to another feed).
+
+Auction prints (PLAN.md §11, 2026-10-20 amendment): Alpaca's daily bar open/close are not the official auction prints
+on many 2016-2022 sessions, so `1DayAuction` is built from SIP trades: the listing exchange's opening cross
+(condition `O`) and closing cross (condition `6`), the prices an OPG / MOC order is filled at."""
 
 from datetime import date, datetime
 
@@ -29,6 +33,11 @@ NATIVE_MINUTES = {
     "5Min": 5,
     "1DayPrint": None,
 }  # None = Alpaca's daily bar (open/close are the auction prints)
+
+
+# Listing exchange in Alpaca's SIP exchange codes (P = NYSE Arca; T = Nasdaq, as Alpaca reports its crosses)
+PRIMARY_EXCHANGE = {"SPY": "P", "IWM": "P", "DIA": "P", "QQQ": "T"}
+OPEN_CROSS, CLOSE_CROSS = "O", "6"
 
 
 def ts(x) -> pd.Timestamp:
@@ -121,3 +130,39 @@ class AlpacaSource:
         if not isinstance(raw, list):
             raise TypeError(f"expected raw calendar rows, got {type(raw).__name__}")
         return calendar_from_raw([dict(r) for r in raw])
+
+    def trades(self, symbol: str, start: datetime, end: datetime) -> list[dict]:
+        """Raw SIP trades in [start, end) (tz-aware bounds): {"t", "p", "s", "x", "c", ...}. Errors propagate."""
+        from alpaca.data.enums import DataFeed
+        from alpaca.data.requests import StockTradesRequest
+
+        stop = ts(end).tz_convert("UTC")
+        req = StockTradesRequest(symbol_or_symbols=symbol, start=ts(start).tz_convert("UTC").to_pydatetime(),
+                                 end=stop.to_pydatetime(), feed=DataFeed(self.feed))  # fmt: skip
+        raw = self._data.get_stock_trades(req)
+        if not isinstance(raw, dict):
+            raise TypeError(f"expected raw trade data, got {type(raw).__name__}")
+        return [t for t in raw.get(symbol, []) if ts(t["t"]) < stop]
+
+    def corporate_actions(self, symbol: str, start: date, end: date) -> dict[str, list[dict]]:
+        """Alpaca corporate actions for `symbol` with ex/process dates in [start, end]: {type: [rows]}."""
+        from alpaca.data.historical.corporate_actions import CorporateActionsClient
+        from alpaca.data.requests import CorporateActionsRequest
+
+        key, secret = credential("ALPACA_API_KEY", "ALPACA_API_SECRET")
+        client = CorporateActionsClient(key, secret, raw_data=True)
+        raw = client.get_corporate_actions(CorporateActionsRequest(symbols=[symbol], start=start, end=end))
+        if not isinstance(raw, dict):
+            raise TypeError(f"expected raw corporate actions, got {type(raw).__name__}")
+        return {k: [r for r in v if r.get("symbol") == symbol] for k, v in raw.items()}
+
+
+def auction_from_trades(trades: list[dict], primary: str, condition: str) -> tuple[float, float, int] | None:
+    """(price, size, n_distinct_prices) of the listing exchange's cross: the largest trade at `primary` carrying
+    `condition`; None if there is none. Duplicate reports of one cross are common; distinct prices are counted for
+    the quality report, never averaged."""
+    hits = [t for t in trades if t.get("x") == primary and condition in (t.get("c") or [])]
+    if not hits:
+        return None
+    best = max(hits, key=lambda t: t["s"])
+    return float(best["p"]), float(best["s"]), len({t["p"] for t in hits})

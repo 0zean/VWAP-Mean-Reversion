@@ -9,7 +9,7 @@ import pytest
 from vwap_mr import config
 from vwap_mr.backtest.costs import check_costable
 from vwap_mr.config import DecisionTime
-from vwap_mr.data import bars, calendar, credentials, exo, secondary
+from vwap_mr.data import bars, calendar, credentials, dividends, exo, secondary
 from vwap_mr.data.alpaca import BAR_COLUMNS, bars_from_raw, calendar_from_raw, midnight
 from vwap_mr.data.alpaca import ts as ts_
 from vwap_mr.data.bars import HoldoutError, load_bars, resample_daily, rth_filter, snapshot
@@ -44,10 +44,46 @@ class FakeSource:
     bar per session stamped at NY midnight whose open/close are the 09:30 open and the session-close print and whose
     volume includes extended hours (as Alpaca's daily bar)."""
 
-    def __init__(self, factor: float = 1.0):
+    def __init__(self, factor: float = 1.0, divs: dict | None = None):
         self.factor = factor
         self.bar_calls: list[tuple] = []
+        self.trade_calls = 0
         self.calendar_calls = 0
+        self.delay: dict = {}  # "YYYY-MM-DD open|close" -> cross printed late
+        self.missing: set[str] = set()  # "YYYY-MM-DD open|close" -> no cross at all
+        self.divs = divs if divs is not None else {"2024-11-27": 0.5}
+
+    @staticmethod
+    def cross(day, side: str) -> float:
+        """The fake listing-exchange cross price of a session (distinct from every bar price)."""
+        d = pd.Timestamp(day)
+        return round(200 + d.dayofyear * 0.37 + (0.11 if side == "open" else 0.23), 2)
+
+    def trades(self, symbol, start, end):
+        """SIP-like trades around each session bound in [start, end): the primary cross (reported twice), a decoy
+        cross at another venue at another price, and a larger unflagged trade at the primary."""
+        self.trade_calls += 1
+        cal = calendar_from_raw(CAL_ROWS)
+        out = []
+        for d, row in cal[(cal.index >= start.tz_localize(None).normalize() - pd.Timedelta(days=1))
+                          & (cal.index <= end.tz_localize(None))].iterrows():  # fmt: skip
+            for side, cond in (("open", "O"), ("close", "6")):
+                key = f"{d.date()} {side}"
+                at = row[f"session_{side}"] + self.delay.get(key, pd.Timedelta(milliseconds=80))
+                if key in self.missing or not (start <= at < end):
+                    continue
+                px = self.cross(d, side)
+                stamp = at.tz_convert("UTC").isoformat()
+                out += [{"t": stamp, "p": px, "s": 5000, "x": "P", "c": [" ", cond]},
+                        {"t": stamp, "p": px, "s": 5000, "x": "P", "c": [" ", cond]},
+                        {"t": stamp, "p": px + 0.5, "s": 100, "x": "T", "c": [" ", cond, "X"]},
+                        {"t": stamp, "p": px + 1.0, "s": 9000, "x": "P", "c": [" "]}]  # fmt: skip
+        return out
+
+    def corporate_actions(self, symbol, start, end):
+        rows = [{"symbol": symbol, "ex_date": d, "rate": r} for d, r in self.divs.items()
+                if str(start) <= d <= str(end)]  # fmt: skip
+        return {"cash_dividends": rows}
 
     def calendar(self, start, end):
         self.calendar_calls += 1
@@ -95,8 +131,19 @@ def cal():
     return calendar_from_raw(CAL_ROWS)
 
 
+YAHOO_DIVS = {"2024-11-27": 0.5}  # what the fake Yahoo reports; tests edit a copy through monkeypatch
+
+
+def _yahoo_div_json(divs: dict) -> str:
+    ev = {str(int(ts_(f"{d} 09:30").tz_localize(NY).timestamp())): {"amount": a,
+          "date": int(ts_(f"{d} 09:30").tz_localize(NY).timestamp())} for d, a in divs.items()}  # fmt: skip
+    return json.dumps({"chart": {"error": None, "result": [{"events": {"dividends": ev}}]}})
+
+
 @pytest.fixture
 def root(tmp_path, monkeypatch):
+    monkeypatch.setattr(exo, "http_get", lambda url, params=None: _yahoo_div_json(YAHOO_DIVS))
+    monkeypatch.setattr(dividends, "OVERRIDES_PATH", tmp_path / "no_overrides.csv")
     monkeypatch.setattr(bars, "today_ny", lambda: pd.Timestamp("2025-01-10"))
     monkeypatch.setattr(calendar, "today_ny", lambda: pd.Timestamp("2025-01-10"))
     monkeypatch.setattr(exo, "today_ny", lambda: pd.Timestamp("2026-10-20"))
@@ -481,6 +528,107 @@ def test_available_at_dtb3_h15_rule():
                                   [np.nan, 4.4])  # fmt: skip
 
 
+# ── 1DayAuction: listing-exchange crosses ───────────────────────────────────
+
+
+def test_auction_picks_listing_exchange_cross(root):
+    src = FakeSource()
+    a = _load(root, "1DayAuction", "2024-11-25", "2024-12-03", src, adjustment="raw")
+    assert len(a) == 5 and pd.Timestamp("2024-11-28", tz=NY) not in a.index  # holiday
+    for d in a.index:
+        assert a.loc[d, "open"] == FakeSource.cross(
+            d.date(), "open"
+        )  # not the decoy, not the unflagged trade
+        assert a.loc[d, "close"] == FakeSource.cross(d.date(), "close")
+    assert (a["open_size"] == 5000).all() and (a["close_nprice"] == 1).all() and (a["close_wide"] == 0).all()
+    # the half-day's close cross is searched at 13:00, not 16:00
+    assert a.loc[pd.Timestamp("2024-11-29", tz=NY), "close"] == FakeSource.cross("2024-11-29", "close")
+    with pytest.raises(ValueError, match="'all'"):
+        _load(root, "1DayAuction", "2024-11-25", "2024-12-03", src, adjustment="split")
+
+
+def test_auction_wide_window_and_missing_cross(root, capsys, cal):
+    src = FakeSource()
+    src.delay["2024-11-26 open"] = pd.Timedelta(seconds=120)  # a delayed opening auction
+    src.missing.add("2024-11-27 close")
+    a = _load(root, "1DayAuction", "2024-11-25", "2024-12-03", src, adjustment="raw")
+    d26, d27 = pd.Timestamp("2024-11-26", tz=NY), pd.Timestamp("2024-11-27", tz=NY)
+    assert a.loc[d26, "open"] == FakeSource.cross("2024-11-26", "open") and a.loc[d26, "open_wide"] == 1
+    assert np.isnan(a.loc[d27, "close"]) and a.loc[d27, "close_nprice"] == 0  # never filled
+    assert "no close cross in 1 session(s): ['2024-11-27']" in capsys.readouterr().out
+    rep = quality_report(a, cal, "1DayAuction")
+    assert (
+        rep["no_close_cross"] == 1
+        and rep["no_close_cross_dates"] == "2024-11-27"
+        and rep["open_wide_window"] == 1
+    )
+
+
+# ── Dividends: reconciliation, factors, adjusted auction prints ─────────────
+
+
+def _divs(d: dict) -> pd.DataFrame:
+    return dividends._frame(d.keys(), d.values())
+
+
+def test_reconcile_tolerance_mismatch_and_overrides(tmp_path):
+    no_ov = dividends.read_overrides(tmp_path / "none.csv")
+    ok = dividends.reconcile("SPY", _divs({"2024-03-15": 1.5952}), _divs({"2024-03-15": 1.595}), no_ov)
+    assert ok["amount"].iloc[0] == 1.5952 and ok["resolution"].iloc[0] == 0  # Yahoo's 3-decimal rounding
+    alp, yah = (
+        _divs({"2016-03-18": 1.05, "2018-06-15": 1.2}),
+        _divs({"2016-03-18": 1.05, "2018-06-15": 1.246}),
+    )
+    with pytest.raises(dividends.DividendMismatchError, match="2018-06-15  alpaca 1.2  yahoo 1.246"):
+        dividends.reconcile("SPY", alp, yah, no_ov)
+    with pytest.raises(dividends.DividendMismatchError, match="2016-03-18  alpaca nan"):
+        dividends.reconcile("SPY", _divs({}), _divs({"2016-03-18": 1.05}), no_ov)
+    path = tmp_path / "ov.csv"
+    path.write_text('symbol,ex_date,amount,note\nSPY,2018-06-15,1.24557,"issuer page, checked"\n')
+    t = dividends.reconcile("SPY", alp, yah, dividends.read_overrides(path))
+    assert t.loc["2018-06-15", "amount"] == 1.24557 and t["resolution"].sum() == 1
+    with pytest.raises(dividends.DividendMismatchError, match="match no disagreement"):
+        dividends.reconcile("SPY", yah, yah, dividends.read_overrides(path))  # a stale override is refused
+    path.write_text("symbol,ex_date,amount,note\nSPY,2018-06-15,1.24557,\n")
+    with pytest.raises(ValueError, match="note"):
+        dividends.read_overrides(path)
+    with pytest.raises(dividends.DividendMismatchError, match="unhandled"):
+        dividends.parse_alpaca({"cash_dividends": [], "forward_splits": [{"symbol": "SPY"}]})
+
+
+def test_adjustment_factor_by_hand():
+    idx = pd.DatetimeIndex(["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"], tz=NY)
+    close = pd.Series([100.0, 102.0, 101.0, 103.0], index=idx)
+    f = dividends.adjustment_factor(close, _divs({"2024-01-04": 1.0}))
+    np.testing.assert_allclose(f, [101 / 102, 101 / 102, 1, 1], rtol=0, atol=1e-15)
+    adj = close * f
+    assert adj.iloc[2] / adj.iloc[1] - 1 == pytest.approx((101 + 1) / 102 - 1, abs=1e-14)  # total return
+    with pytest.raises(ValueError, match="not sessions"):
+        dividends.adjustment_factor(close, _divs({"2024-01-06": 1.0}))
+    with pytest.raises(ValueError, match="missing close"):
+        dividends.adjustment_factor(close.where(close.index != idx[2]), _divs({"2024-01-04": 1.0}))
+
+
+def test_auction_adjusted_by_reconciled_dividends(root):
+    src = FakeSource()
+    a = _load(root, "1DayAuction", "2024-11-18", "2024-12-10", src)
+    ex = pd.Timestamp("2024-11-27", tz=NY)
+    assert a.loc[ex, "dividend"] == 0.5 and (a["dividend"] > 0).sum() == 1
+    r = a["close"].pct_change()
+    tr = (a["close_raw"] + a["dividend"]) / a["close_raw"].shift() - 1
+    np.testing.assert_allclose(r.iloc[1:], tr.iloc[1:], rtol=0, atol=1e-13)
+    assert (a.loc[a.index >= ex, "factor"] == 1).all() and (a.loc[a.index < ex, "factor"] < 1).all()
+    part = _load(root, "1DayAuction", "2024-11-20", "2024-11-27", src)
+    pd.testing.assert_frame_equal(part, a.loc[part.index])  # a slice gets the full frame's factors
+    assert json.loads((vintage_dir("t", root) / "dividends/SPY.json").read_text())["overrides_used"] == 0
+
+
+def test_auction_refuses_unreconciled_dividends(root, monkeypatch):
+    monkeypatch.setitem(YAHOO_DIVS, "2024-11-27", 0.52)
+    with pytest.raises(dividends.DividendMismatchError, match="2024-11-27"):
+        _load(root, "1DayAuction", "2024-11-18", "2024-12-10")
+
+
 # ── diag: Yahoo parsing, splice, cost-model refusal ─────────────────────────
 
 
@@ -492,57 +640,70 @@ def _yahoo_json(days, close, adj, volume):
                        "adjclose": [{"adjclose": list(adj)}]}}]}})  # fmt: skip
 
 
-def _diag_inputs(step_at_exdates: bool):
-    days = pd.bdate_range("2015-01-02", "2016-12-30")
+EX_DATES = ["2015-03-20", "2015-06-19", "2015-09-18", "2015-12-18", "2016-03-18", "2016-06-17", "2016-09-16",
+            "2016-12-16", "2017-03-17", "2017-06-16", "2017-09-15", "2017-12-15", "2018-03-16", "2018-06-15"]  # fmt: skip
+
+
+def _diag_inputs(auction_close=lambda close, factor: close):
+    """Yahoo raw/adjclose 2015-2018 with quarterly 0.5 % dividends, and a 1DayAuction frame from 2016 whose raw close
+    is `auction_close(yahoo close, yahoo factor)` plus a cent of noise, adjusted with the same dividends."""
+    days = pd.bdate_range("2015-01-02", "2018-12-31")
     rng = np.random.default_rng(3)
-    close = 200 * np.exp(np.cumsum(rng.normal(0, 0.01, len(days))))
-    factor = np.ones(len(days))
-    for ex in pd.DatetimeIndex(["2015-03-20", "2015-06-19", "2015-09-18", "2015-12-18", "2016-03-18", "2016-06-17",
-                                "2016-09-16", "2016-12-16"]):  # fmt: skip
-        factor[days < ex] *= 0.995
-    adj = close * factor
-    raw = secondary.parse_yahoo_chart(_yahoo_json(days, close, adj, np.full(len(days), 1e8)))
-    tr = pd.Series(adj * 1.2345, index=raw.index)  # Alpaca: total-return adjusted, another level
-    if step_at_exdates:
-        tr = pd.Series(close * 1.2345, index=raw.index)  # Alpaca split-only: ratio steps at every ex-date
-    alp = pd.DataFrame({"close": tr, "volume": 9e7}, index=raw.index)
-    return raw, alp[alp.index >= pd.Timestamp(config.DEV_START, tz=NY)]
-
-
-def test_splice_constant_ratio_accepted():
-    raw, alp = _diag_inputs(step_at_exdates=False)
-    out, rep = secondary.splice(raw, alp)
-    assert (
-        rep["ratio_max_rel_dev"] < 1e-12
-        and rep["close_corr"] > 0.9999
-        and rep["ratio_median"] == pytest.approx(1.2345)
+    close = np.round(200 * np.exp(np.cumsum(rng.normal(0, 0.01, len(days)))), 2)
+    step = np.ones(len(days))
+    for ex in EX_DATES:
+        step[days.get_loc(pd.Timestamp(ex))] = 0.995
+    yf = np.append(np.cumprod(step[::-1])[::-1][1:], 1.0)
+    raw = secondary.parse_yahoo_chart(_yahoo_json(days, close, close * yf, np.full(len(days), 1e8)))
+    dev = raw.index >= pd.Timestamp(config.DEV_START, tz=NY)
+    craw = pd.Series(auction_close(close, yf), index=raw.index)[dev] + rng.choice([-0.01, 0, 0.01], dev.sum())
+    divs = _divs(
+        {ex: 0.005 * float(raw["close"].shift().loc[pd.Timestamp(ex, tz=NY)]) for ex in EX_DATES[4:]}
     )
-    assert (
-        out.index[-1] < pd.Timestamp(config.DEV_START, tz=NY)
-        and out.attrs["source"] == "diag"
-        and out["is_diag"].all()
+    factor = dividends.adjustment_factor(craw, divs)
+    auction = pd.DataFrame({"open": craw * factor, "close": craw * factor, "open_raw": craw, "close_raw": craw,
+                            "dividend": divs["amount"].reindex(craw.index.tz_localize(None)).fillna(0).to_numpy(),
+                            "factor": factor})  # fmt: skip
+    return raw, auction
+
+
+def test_splice_raw_vs_raw_accepted_and_continuous():
+    raw, auction = _diag_inputs()
+    out, rep = secondary.splice(raw, auction)
+    assert abs(rep["raw_ratio_median"] - 1) < 1e-4 and rep["adjusted_close_corr"] > 0.9999
+    assert out.index[-1] < pd.Timestamp(config.DEV_START, tz=NY) and out.attrs["source"] == "diag"
+    assert out["is_diag"].all()
+    last, first = out.index[-1], auction.index[0]
+    # total return across the boundary equals Yahoo's raw return (no dividend on 2016-01-04)
+    k = rep["raw_ratio_median"]
+    assert auction.loc[first, "close"] / out.loc[last, "close"] == pytest.approx(
+        auction.loc[first, "close_raw"] / (raw.loc[last, "close"] * k), rel=1e-12)  # fmt: skip
+    # a 2015 ex-date is a total-return step inside diag
+    e = pd.Timestamp("2015-06-19", tz=NY)
+    prev = out.index[out.index.get_loc(e) - 1]
+    assert out.loc[e, "close"] / out.loc[prev, "close"] == pytest.approx(
+        raw.loc[e, "close"] / (0.995 * raw.loc[prev, "close"])
     )
-    first = raw.index[0]
-    assert out.loc[first, "close"] == pytest.approx(raw.loc[first, "adjclose"] * 1.2345)
-    assert out.loc[first, "close_split"] == raw.loc[first, "close"]
+    assert out.loc[out.index[0], "close_split"] == raw.loc[raw.index[0], "close"]
 
 
-def test_splice_refuses_non_constant_ratio():
-    raw, alp = _diag_inputs(step_at_exdates=True)
-    with pytest.raises(secondary.SpliceError, match="not constant"):
-        secondary.splice(raw, alp)
+def test_splice_refuses_drifting_or_rescaled_source():
+    with pytest.raises(secondary.SpliceError, match="not constant"):  # a dividend-adjusted 'raw' close drifts
+        secondary.splice(*_diag_inputs(lambda close, yf: close * yf))
+    with pytest.raises(secondary.SpliceError, match="levels differ"):  # a split or a re-scaling
+        secondary.splice(*_diag_inputs(lambda close, yf: close * 1.01))
 
 
 def test_cost_model_refuses_diag():
-    raw, alp = _diag_inputs(step_at_exdates=False)
-    out, _ = secondary.splice(raw, alp)
+    raw, auction = _diag_inputs()
+    out, _ = secondary.splice(raw, auction)
     with pytest.raises(secondary.DiagDataError):
         check_costable(out)
     stripped = out.copy()
     stripped.attrs = {}
     with pytest.raises(secondary.DiagDataError):  # the row flag survives a lost attrs
         check_costable(stripped)
-    check_costable(alp)  # Alpaca bars pass
+    check_costable(auction)  # Alpaca prints pass
 
 
 def test_yahoo_parser_refuses_missing_fields():

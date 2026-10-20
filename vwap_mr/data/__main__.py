@@ -1,6 +1,7 @@
 """Data CLI (U1).
 
     uv run python -m vwap_mr.data fetch --symbols SPY QQQ IWM DIA --start 2016-01-04 --vintage 2026-10
+    uv run python -m vwap_mr.data fetch --timeframes 1DayPrint --adjustment raw --vintage 2026-10
     uv run python -m vwap_mr.data exo --vintage 2026-10                 # VIX (CBOE), DTB3 (FRED API)
     uv run python -m vwap_mr.data diag --vintage 2026-10                # Yahoo SPY 1993-2015, splice check
     uv run python -m vwap_mr.data quality --vintage 2026-10             # -> results/data_quality.csv
@@ -33,7 +34,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("command", choices=["fetch", "exo", "diag", "quality", "freeze", "verify"])
     p.add_argument("--vintage", required=True)
     p.add_argument("--symbols", nargs="+", default=SYMBOLS)
-    p.add_argument("--timeframes", nargs="+", default=["1DayPrint", "5Min"], choices=list(QUALITY_TIMEFRAMES))
+    p.add_argument(
+        "--timeframes", nargs="+", default=list(QUALITY_TIMEFRAMES), choices=list(QUALITY_TIMEFRAMES)
+    )
+    p.add_argument("--adjustment", default="all", choices=["all", "raw"])
     p.add_argument("--start", default=str(DEV_START))
     p.add_argument("--end", default=str(HOLDOUT_START), help="exclusive; default HOLDOUT_START")
     p.add_argument("--cache-root", type=Path, default=CACHE_DIR)
@@ -48,7 +52,14 @@ def main(argv: list[str] | None = None) -> None:
     if a.command == "fetch":
         for sym in a.symbols:
             for tf in a.timeframes:
-                df = load_bars(sym, tf, a.start, a.end, **kw)
+                if (
+                    tf == "1DayAuction"
+                ):  # ~2 requests per session: top up a year at a time so a crash keeps progress
+                    for year in range(ts(a.start).year + 1, ts(a.end).year + 1):
+                        stop = min(ts(f"{year}-01-01"), ts(a.end))
+                        load_bars(sym, tf, a.start, stop, adjustment="raw", **kw)
+                        print(f"[DATA]  {sym} 1DayAuction cached to {stop.date()}", flush=True)
+                df = load_bars(sym, tf, a.start, a.end, adjustment=a.adjustment, **kw)
                 print(f"[DATA]  {sym:5s} {tf:9s} {len(df):>9,} bars  {df.index[0]} -> {df.index[-1]}")
     elif a.command == "exo":
         for name in SERIES:
@@ -68,9 +79,7 @@ def main(argv: list[str] | None = None) -> None:
         ]
         a.report.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(rows).to_csv(a.report, index=False, lineterminator="\n")
-        print(
-            pd.DataFrame(rows).drop(columns=["missing_session_dates", "missing_last_bar_dates"]).to_string()
-        )
+        print(pd.DataFrame(rows).filter(regex="^(?!.*_dates$)").to_string())
         print(f"[DATA]  quality report -> {a.report}")
     elif a.command == "freeze":
         man = freeze(vintage_dir(a.vintage, a.cache_root), note=a.note)
