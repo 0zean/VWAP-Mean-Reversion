@@ -178,7 +178,7 @@ Copy the function and its tests; rename to this package; keep the citation in th
 |---|---|---|
 | `data/alpaca_source.py` (`AlpacaSource`, `bars_from_raw`, `_credentials`) | `vwap_mr/data/alpaca.py` | SIP bars; Alpaca's inclusive `end` trimmed to `[start, end)`; credentials from `.env` only |
 | `data/store.py` (`atomic_write`, `merge_bars`, sidecar hash) | `vwap_mr/data/store.py` | cache with sha256 sidecar, overlap re-fetch, re-adjustment detection |
-| `data/bars.py::load_bars`, `data/sessions.py` (`rth_filter`, `resample_daily`, `drop_sessions_missing_last_bar`), `data/timeframes.py` (`1DayPrint`) | `vwap_mr/data/bars.py` | the one entry point; RTH filter; auction prints |
+| `data/bars.py::load_bars`, `data/sessions.py` (`rth_filter`, `resample_daily`, `drop_sessions_missing_last_bar`), `data/timeframes.py` (`1DayPrint`) | `vwap_mr/data/bars.py` | the one entry point; RTH filter; auction prints (amended: `1DayAuction` from SIP trades, §11) |
 | `data/exo.py::load_series` + `available_at`; `features/exo_align.py::Exo` | `vwap_mr/data/exo.py` | VIX (CBOE, 16:20 ET), DTB3 (FRED H.15 rule) |
 | `data/quality.py` | `vwap_mr/data/quality.py` | missing / duplicate / OHLC / off-calendar report |
 | `validation/stats.py` (`psr`, `min_track_record_length`) | `vwap_mr/stats/sharpe.py` | with the Bailey–López de Prado test vector |
@@ -200,17 +200,26 @@ families runner, fracdiff, Goertzel, quotes and option samplers, PBO.
 
 ## 4. Data, windows and instruments
 
-- **Primary data (Alpaca, SIP, `adjustment=all`).** For SPY, QQQ, IWM, DIA from 2016-01-04:
-  - `1DayPrint`: Alpaca's native daily bar. Its `open`/`close` are the official auction prints; its `volume` is
-    consolidated (the sibling repo found it includes extended hours — **verify in U1** against the RTH sum). The
-    headline VWAP uses this bar's close and volume (closest to the original rule, and what the live loop sees).
+- **Primary data (Alpaca, SIP; prices total-return adjusted by our own reconciled dividend table — amended
+  2026-10-20, §11).** For SPY, QQQ, IWM, DIA from 2016-01-04:
+  - `1DayAuction`: per session the listing exchange's **opening and closing cross** from SIP trades (condition
+    `O` / `6`, else the exchange's official open / close report `Q` / `M`): the price an OPG / MOC order is filled
+    at. Missing crosses are NaN and counted, never filled. Adjusted with the dividend table of
+    `vwap_mr/data/dividends.py` (Alpaca corporate actions cross-checked against Yahoo, disagreements resolved in
+    `data/dividends_overrides.csv` with a cited source), exact total return close-to-close.
+  - `1DayPrint`: Alpaca's native daily bar, kept **for its consolidated volume only** (it includes extended hours
+    and the closing cross; U1 measured it). U1 found its `open`/`close` are *not* the auction prints on many
+    2016–2022 sessions and its `adjustment=all` misses or doubles some dividends. The headline VWAP uses the
+    `1DayAuction` close and the `1DayPrint` volume.
   - `5Min` RTH bars: for RTH-only volume (a variant), the pre-close snapshot `snap1545` (last trade at or before
     15:45, cumulative RTH volume and session VWAP to 15:45), and U14.
-  - **Session close for every `decision="close"` strategy and for marking is the `1DayPrint` close**, in the
-    backtest and in the live loop alike (the last 5Min bar's close differs from the print by ≈ 1 bp).
+  - **Session close for every `decision="close"` strategy and for marking is the `1DayAuction` close**, in the
+    backtest and in the live loop alike (U2/U13 confirm the closing-cross trade is readable at 16:25 on the Basic
+    plan's 15-minute-delayed SIP).
   - **Frozen vintage.** The development-window cache is fetched once and frozen (`data/cache/vintage_2026-10/`, user decision 2026-10-20);
-    live top-ups go to a separate cache. `adjustment=all` re-scales history at every ex-dividend date, so hashing
-    a live cache would make identical configurations look like new cells every quarter.
+    live top-ups go to a separate cache. Our factors are normalised at the window's last session, so a frozen
+    vintage does not re-scale; a growing live cache does, so hashing it would make identical configurations look
+    like new cells every quarter.
   - Alpaca's Basic plan provides this history; it refuses SIP requests whose window ends inside the last 15
     minutes, which matters only for the live loop (U2, U13).
 - **Exogenous (point-in-time).** CBOE VIX close (`available_at` 16:20 ET: visible to a `close` decision made at
@@ -266,7 +275,7 @@ time; the engine builds the view.
 
 ```python
 class DecisionView(NamedTuple):
-    sessions: pd.DataFrame      # completed sessions ≤ t (close decision) or ≤ t−1 (t1545 decision); 1DayPrint close
+    sessions: pd.DataFrame      # completed sessions ≤ t (close decision) or ≤ t−1 (t1545 decision); 1DayAuction close
     snapshot: pd.Series | None  # t1545 only: last trade, RTH volume and session VWAP to 15:45 of session t
     state: pd.DataFrame | None  # state variables aligned to the same cut-off
     exo: Exo                    # .asof(decision_time)
@@ -296,7 +305,7 @@ Cells of a region appear on a specification curve with bootstrap intervals; cohe
 headline's sign and the median cell's statistic.
 
 **The VWAP-MR region R₀ is fixed here, from the mechanism, before any development-window P&L is read:**
-`n ∈ {2, 3, 5, 10}` sessions × `b ∈ {0, 0.10, 0.25, 0.50 %}` = 16 cells; `VWAP_n` from `1DayPrint` close × volume
+`n ∈ {2, 3, 5, 10}` sessions × `b ∈ {0, 0.10, 0.25, 0.50 %}` = 16 cells; `VWAP_n` from `1DayAuction` close × `1DayPrint` volume
 over sessions t−n+1 … t; cell target −1 / 0 / +1 per §8.1; region target = mean of the 16. Variants (U6): RTH-only
 volume; VWAP from the sessions' own VWAPs; cells with b > 0 only; cells with n ≤ 5 only; long-only; short-only;
 the other execution; vol-targeted at 10 %.
@@ -562,7 +571,7 @@ and the engine's invariants tested.
     cost of the change `|f_t − f_{t−1}|` booked at the open of t+1.
   - `moc`: shares change at the closing print of t (decision from `snap1545`); `R_{t+1} = f_t·(close_{t+1}/close_t − 1)`;
     cost of the change booked at the close of **t** (the fill).
-  - Equity marked at `1DayPrint` closes; a missing print is a counted fallback to the bar price, never silent;
+  - Equity marked at `1DayAuction` closes; a missing cross is a counted fallback to the last RTH 5Min close, never silent;
     per-session cost ledger (notional traded, cost paid, by fill kind) so a stream can be re-priced.
 - `backtest/costs.py`: per fill, half-spread + slippage by kind (`open_auction`, `close_auction`); registered
   1.0 bp round trip until `measured`; curve 0.3 / 1.0 / 2.3; SEC Section 31 fee and FINRA TAF on sells from a
@@ -848,7 +857,7 @@ the registered BOCPD run length λ = 126 and the kill rule for U13, the H5 rule)
 holdout; measure what the paper environment lets us measure.
 
 **Scope.**
-- `live/bars.py`: at 16:25 ET the completed session's `1DayPrint` bar and the VIX close (both available on the
+- `live/bars.py`: at 16:25 ET the completed session's closing cross (SIP trades), `1DayPrint` volume and the VIX close (both available on the
   Basic plan); for a `moc` configuration (only if registered) the 15:45 snapshot from the real-time feed (SIP with
   Algo Trader Plus; IEX volume is not usable — U2). Every forward read logs an audit row.
 - `live/signals.py`: the registered strategy at the frozen code hash; a mismatch refuses to trade.
@@ -897,8 +906,8 @@ rolling calibration, linear sizing, no model zoo.
 
 ## 8. Definitions (compact; SPEC.md elaborates from U3/U4)
 
-**8.1 VWAP and deviations.** `VWAP_n(t) = Σ_{i=0}^{n−1} p_{t−i} v_{t−i} / Σ v_{t−i}` with `p` = `1DayPrint` close and
-`v` = `1DayPrint` volume (headline), RTH volume or the sessions' own VWAPs (variants). **Trading deviation**
+**8.1 VWAP and deviations.** `VWAP_n(t) = Σ_{i=0}^{n−1} p_{t−i} v_{t−i} / Σ v_{t−i}` with `p` = `1DayAuction` close and
+`v` = `1DayPrint` volume (headline), RTH volume + the closing-cross size or the sessions' own VWAPs (variants). **Trading deviation**
 `d_t = close_t / VWAP_n(t) − 1` (includes session t, as the rule does). Cell target `s_t = −1` if `d_t > b`, `+1` if
 `d_t < −b`, else 0; region target = mean over cells. **State deviation** `d*_t = close_t / VWAP_5(t−1) − 1`
 (anchor over sessions t−5 … t−1, excluding t, so today's close does not sit in both numerator and denominator);
@@ -907,7 +916,7 @@ deviation from any trailing anchor reverts by construction; what varies across t
 estimators are never run on `d_t` or `d*_t`.
 
 **8.2 Timing.** Decision at the strategy's declared cut-off (`close` = 16:25 ET from the completed session, or
-`t1545`) using only the `DecisionView`; fill at the next auction print per §7 U3. Equity marked at `1DayPrint`
+`t1545`) using only the `DecisionView`; fill at the next auction print per §7 U3. Equity marked at `1DayAuction`
 closes.
 
 **8.3 Costs.** Per fill: half-spread + slippage by fill kind (registered 1.0 bp round trip → `measured`); SEC §31
@@ -994,6 +1003,18 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
 
 ## 11. Handoff notes and amendments (newest first)
 
+- **2026-10-20 — U1 amendment: auction prints and dividends (user decisions, made inside U1).** The live smoke
+  showed two Alpaca data problems the plan had assumed away. (1) `1DayPrint` open/close are not the official
+  auction prints on many 2016–2022 sessions: SPY's close differs from the official close on 924 of 2,514 sessions
+  (worst 288 bp, 2020-03-12: 255.24 vs 248.11), QQQ's open on 752, IWM's close on 693; from 2023 they agree. (2)
+  Alpaca's `adjustment=all` misses SPY 2016-03-18 and 2018-06-15 and DIA 2016-03-18 and doubles QQQ 2022-09-19;
+  Yahoo misses QQQ 2020-09-21. Decisions: prints come from a new `1DayAuction` timeframe built from SIP trades
+  (listing exchange's `O`/`6` cross, else its `Q`/`M` official report); total-return adjustment from our own
+  dividend table (Alpaca × Yahoo, ten disagreements resolved with cited third sources in
+  `data/dividends_overrides.csv`), applied to `1DayAuction` and the 5Min family alike; the diag splice is raw vs
+  raw. §4, §5, §6.1, §7 U3/U13 and §8.1–8.2 now name `1DayAuction` where they named the `1DayPrint` close.
+  **Proposal (not applied):** the RTH-only volume variant should add the closing-cross size, because the 16:00
+  cross sits in the 16:00 bar, which the RTH 5Min filter drops (cross ≈ 1.8 % of SPY's consolidated volume).
 - 2026-10-20 — U1 decisions (before code). §9.1: Stooq now serves a JavaScript bot check, so the user chose the
   **Yahoo chart API** for `diag` (no key; also `VWAP.R`'s source). DTB3 comes from the **FRED API** with
   `FRED_API_KEY` in `.env`, because fredgraph.csv times out from this machine (curl and requests). The frozen vintage
