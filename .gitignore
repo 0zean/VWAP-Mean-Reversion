@@ -1,4 +1,17 @@
-__pycache__
-.idea
-.venv
-*.yaml
+__pycache__/
+.idea/
+.venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.claude/worktrees/
+
+# secrets (PLAN.md §0): credentials live in .env only
+alpaca_api.yaml
+.env
+
+# data and per-cell outputs (results/*.jsonl, results/reports/*.md and specs/ ARE committed)
+data/cache/
+results/cells/
+results/reports/*.html
+results/*.lock
