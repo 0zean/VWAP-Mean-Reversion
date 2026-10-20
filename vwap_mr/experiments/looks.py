@@ -4,12 +4,15 @@ Bonferroni bound (p × K) next to every bootstrap p (PLAN.md §0, §6.7).
 
 Ported from 0zean/wavelet-meta-model `families/looks.py` (`record_look`, `looks_total`, `bonferroni`). Changes:
 rows are appended through `Ledger` (lock + fsync); a missing git SHA raises instead of recording "unknown"
-(PLAN.md §0, no silent fallbacks). The seed is K₀ = 1 (PLAN.md §7 U0).
+(PLAN.md §0, no silent fallbacks); the reader raises on a malformed line instead of skipping it (a skipped look
+would undercount K). The seed is K₀ = 1 (PLAN.md §7 U0).
 
 Contract: a look is appended BEFORE its result is read. A look is not a trial: trials are counted and budgeted by
 the runner's ledger; looks are the wider count of what was examined, including what never became a trial.
 """
 
+import json
+import math
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,7 +47,23 @@ def record_look(
 
 
 def looks(path: Path = LOOKS_PATH) -> list[dict]:
-    return Ledger(path, validate=_validate_look).rows()
+    """Every look, strictly: a malformed or invalid line raises (skipping it would undercount K)."""
+    if not Path(path).exists():
+        return []
+    out = []
+    with open(path, encoding="utf-8") as fh:
+        for i, line in enumerate(fh, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+                _validate_look(row)
+            except (json.JSONDecodeError, TypeError, AttributeError, ValueError) as e:
+                raise ValueError(
+                    f"{path}:{i}: malformed look row ({e}); repair it by hand, K is unknown"
+                ) from e
+            out.append(row)
+    return out
 
 
 def looks_total(path: Path = LOOKS_PATH) -> int:
@@ -53,5 +72,7 @@ def looks_total(path: Path = LOOKS_PATH) -> int:
 
 
 def bonferroni(p: float, k: int) -> float:
-    """The Bonferroni bound on a p-value over K looks (capped at 1)."""
+    """The Bonferroni bound on a p-value over K looks (capped at 1); a NaN p raises rather than reading as 1."""
+    if math.isnan(p):
+        raise ValueError("p is NaN")
     return float(min(1.0, p * max(int(k), 1)))

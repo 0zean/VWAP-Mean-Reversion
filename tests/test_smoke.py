@@ -60,10 +60,10 @@ def test_truncated_line_is_isolated(tmp_path, capsys):
 
 
 def test_seeded_looks_ledger():
-    rows = looks(LOOKS_PATH)
-    assert len(rows) == 1 and rows[0]["n"] == 1
+    rows = looks(LOOKS_PATH)  # later units append looks: check the seed row, not the count
+    assert rows[0]["n"] == 1
     assert rows[0]["label"] == "README in-sample chart and down-market reading (prior look)"
-    assert looks_total(LOOKS_PATH) == 1
+    assert looks_total(LOOKS_PATH) >= 1
     assert json.loads(LOOKS_PATH.read_text(encoding="utf-8").splitlines()[0]) == rows[0]
 
 
@@ -79,3 +79,14 @@ def test_record_look_and_bonferroni(tmp_path):
         record_look("c", 1.5, path=path)  # ty: ignore[invalid-argument-type]  (the runtime guard is the test)
     assert bonferroni(0.02, 5) == pytest.approx(0.10)
     assert bonferroni(0.5, 5) == 1.0
+
+
+def test_looks_reader_refuses_malformed_line(tmp_path):
+    path = tmp_path / "looks.jsonl"
+    record_look("a", 5, path=path)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write('{"label": "b", "n": 7')
+    with pytest.raises(ValueError, match="malformed look row"):
+        looks_total(path)
+    with pytest.raises(ValueError, match="NaN"):
+        bonferroni(float("nan"), 5)
