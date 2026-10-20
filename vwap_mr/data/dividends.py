@@ -13,7 +13,8 @@ Neither Alpaca's `adjustment=all` nor Yahoo's `adjclose` is right on every ex-da
 - `adjustment_factor`: backward multiplicative, factor(t) = Π over ex-dates e > t of P_e / (P_e + D_e), P_e the raw
   close on the ex-date, equal to 1 on the last session of the table's window. Adjusted returns then equal the exact
   total return (P_e + D_e) / P_{e-1} − 1 (Yahoo's and CRSP's 1 − D_e / P_{e-1} only approximate it). Prices × factor
-  are total-return adjusted, and the factor does not move when later dividends are paid outside the window (a frozen vintage stays
+  are total-return adjusted (exactly close-to-close; an adjusted open-to-open return across an ex-date is off by
+  D·(O_e/P_e − 1)/O_{e−1}, ≈ 0.25 bp typically, so an engine needing exact next-open legs uses raw prices + `dividend`), and the factor does not move when later dividends are paid outside the window (a frozen vintage stays
   frozen)."""
 
 import json

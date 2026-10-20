@@ -214,7 +214,7 @@ def snapshot(df: pd.DataFrame, calendar: pd.DataFrame) -> pd.DataFrame:
 # ── Fetch and cache ─────────────────────────────────────────────────────────
 
 
-def _cross(source, symbol: str, at: pd.Timestamp, condition: str) -> list[float]:
+def _cross(source, symbol: str, at: pd.Timestamp, condition: tuple[str, ...]) -> list[float]:
     """[price, size, n_distinct_prices, window index] of the listing exchange's cross at or after `at`."""
     for k, width in enumerate(AUCTION_WINDOWS):
         hit = auction_from_trades(source.trades(symbol, at, at + width), PRIMARY_EXCHANGE[symbol], condition)
@@ -241,6 +241,37 @@ def _fetch_auction(source, symbol, start, end, calendar) -> pd.DataFrame:
             days = [str(d.date()) for d in miss[:10]]
             _log(f"{symbol} 1DayAuction: no {side} cross in {len(miss)} session(s): {days}")
     return out
+
+
+def refill_missing_crosses(symbol: str, *, vintage: str, feed: str = "sip", cache_root: Path = CACHE_DIR,
+                           source=None) -> dict:  # fmt: skip
+    """Re-query every session of a cached (not frozen) 1DayAuction frame whose open or close is NaN, with the current
+    cross rules; save and return {side: [dates filled]} plus what is still missing. Logged, never silent."""
+    vdir = vintage_dir(vintage, cache_root)
+    if (vdir / MANIFEST).exists():
+        raise FrozenVintageError(f"{vdir.name} is frozen")
+    base = vdir / feed / "raw" / "1DayAuction" / symbol
+    ident = {"symbol": symbol, "timeframe": "1DayAuction", "feed": feed, "adjustment": "raw"}
+    df, meta = load_frame(base, expect=ident)
+    calendar = get_calendar(vdir, _day(meta["coverage_end"]), source=source)
+    source = source or AlpacaSource(feed=feed)
+    report = {}
+    for side, cond, k in (("open", OPEN_CROSS, 0), ("close", CLOSE_CROSS, 1)):
+        filled, still = [], []
+        for d in df.index[df[side].isna()]:
+            bound = calendar.loc[d.tz_localize(None), f"session_{side}"]
+            px, sz, n, w = _cross(source, symbol, bound, cond)
+            if np.isnan(px):
+                still.append(str(d.date()))
+                continue
+            df.loc[d, [side, f"{side}_size", f"{side}_nprice", f"{side}_wide"]] = [px, sz, n, w]
+            filled.append(str(d.date()))
+        report[side], report[f"{side}_still_missing"] = filled, still
+        _log(f"{symbol} 1DayAuction: refilled {side} {filled}; still missing {still}")
+    save_frame(base, df, {**{k: v for k, v in meta.items() if k in ("symbol", "timeframe", "feed", "adjustment",
+                          "source", "coverage_start", "coverage_end", "fetched_at")},
+                          "refilled_at": datetime.now().astimezone().isoformat()})  # fmt: skip
+    return report
 
 
 def _fetch(source, symbol, timeframe, start, end, adjustment, calendar) -> pd.DataFrame:

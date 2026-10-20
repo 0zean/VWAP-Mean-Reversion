@@ -8,6 +8,9 @@ no return statistic: prints, volumes and adjustment factors only.
 3. `1DayPrint` open / close vs Yahoo's (official consolidated) open / close, raw prices, by year.
 4. Dividend adjustment: Alpaca `adjustment=all` factor (adjusted / raw open) vs Yahoo's (adjclose / close); every
    ex-date where the two factor steps differ by more than 2e-4.
+5. `1DayAuction` (listing-exchange crosses): sessions without a cross, crosses found only in the wide window, the
+   cross vs the 1DayPrint and Yahoo open / close (sessions with |d| > 1 bp, by year), the closing cross's share of
+   the 1DayPrint volume, and the reconciled dividend table (rows, overrides used).
 """
 
 import argparse
@@ -17,6 +20,7 @@ import pandas as pd
 
 from vwap_mr.config import DEV_START, HOLDOUT_START
 from vwap_mr.data.bars import load_bars
+from vwap_mr.data.dividends import load_dividends
 from vwap_mr.data.secondary import load_yahoo
 
 pd.set_option("display.width", 200)
@@ -36,7 +40,9 @@ def main() -> None:
     for sym in a.symbols:
         print(f"\n## {sym}")
         pr = load_bars(sym, "1DayPrint", *span, vintage=a.vintage)
-        rth = load_bars(sym, "1DayRTH", *span, vintage=a.vintage)
+        rth = load_bars(
+            sym, "1DayRTH", *span, vintage=a.vintage, adjustment="raw"
+        )  # raw vs raw: no factor mix
         raw = load_bars(sym, "1DayPrint", *span, vintage=a.vintage, adjustment="raw")
         c = pr.index.intersection(rth.index)
         print(f"sessions: 1DayPrint {len(pr)}, 1DayRTH {len(rth)}, common {len(c)}; "
@@ -49,7 +55,7 @@ def main() -> None:
             {int(y): round(float(v), 3) for y, v in vr.groupby(c.year).median().items()},
         )
 
-        d = (pr.loc[c, "close"] / rth.loc[c, "close"] - 1) * 1e4
+        d = (raw.loc[c, "close"] / rth.loc[c, "close"] - 1) * 1e4
         print(f"2. print close vs last RTH 5Min close, bp: median |d| {d.abs().median():.2f}, "
               f"p99 |d| {d.abs().quantile(0.99):.2f}, max |d| {d.abs().max():.1f} on {d.abs().idxmax().date()}, "
               f"n |d| > 10 bp: {(d.abs() > 10).sum()}")  # fmt: skip
@@ -66,8 +72,8 @@ def main() -> None:
         cy = raw.index.intersection(y.index)
         dco = (raw.loc[cy, "close"] - y.loc[cy, "close"]).abs()
         doo = (raw.loc[cy, "open"] - y.loc[cy, "open"]).abs()
-        drth = (rth.loc[cy.intersection(rth.index), "close"] / pr.loc[cy.intersection(rth.index), "close"]
-                * raw.loc[cy.intersection(rth.index), "close"] - y.loc[cy.intersection(rth.index), "close"]).abs()  # fmt: skip
+        cr = cy.intersection(rth.index)
+        drth = (rth.loc[cr, "close"] - y.loc[cr, "close"]).abs()
         print(f"3. raw print vs Yahoo, sessions {len(cy)}: close |d| > 1.5c: {(dco > 0.015).sum()} "
               f"(max {dco.max():.2f} on {dco.idxmax().date()}); open |d| > 1.5c: {(doo > 0.015).sum()}; "
               f"last-RTH-5Min close vs Yahoo close |d| > 1.5c: {(drth > 0.015).sum()}")  # fmt: skip
@@ -89,6 +95,29 @@ def main() -> None:
         lvl = (fa / fy) / np.median(fa / fy) - 1
         print("   (Alpaca/Yahoo factor ratio - 1) median by year:",
               {int(k): f"{v:.1e}" for k, v in lvl.groupby(cy.year).median().items()})  # fmt: skip
+
+        au = load_bars(sym, "1DayAuction", *span, vintage=a.vintage)
+        n_div = int((au["dividend"] > 0).sum())
+        n_ov = int(load_dividends(sym, au.index[0].tz_localize(None), au.index[-1].tz_localize(None)
+                                  + pd.Timedelta(days=1), vintage=a.vintage)["resolution"].sum())  # fmt: skip
+        print(f"5. 1DayAuction {len(au)} sessions; no open cross {int(au['open_raw'].isna().sum())}, "
+              f"no close cross {int(au['close_raw'].isna().sum())} "
+              f"{[str(d.date()) for d in au.index[au['close_raw'].isna() | au['open_raw'].isna()]]}; "
+              f"wide window open {int((au['open_wide'] == 1).sum())} close {int((au['close_wide'] == 1).sum())}; "
+              f"multi-price open {int((au['open_nprice'] > 1).sum())} close {int((au['close_nprice'] > 1).sum())}; "
+              f"ex-dates {n_div}, overrides used {n_ov}")  # fmt: skip
+        ca = au.index.intersection(raw.index).intersection(y.index)
+        rows = {}
+        for side in ("open", "close"):
+            x = au.loc[ca, f"{side}_raw"]
+            rows[f"{side}: print>1bp"] = ((raw.loc[ca, side] / x - 1).abs() > 1e-4).groupby(ca.year).sum()
+            rows[f"{side}: yahoo>1bp"] = ((y.loc[ca, side] / x - 1).abs() > 1e-4).groupby(ca.year).sum()
+            rows[f"{side}: print p99 bp"] = (
+                ((raw.loc[ca, side] / x - 1).abs() * 1e4).groupby(ca.year).quantile(0.99)
+            )
+        print(pd.DataFrame(rows).round(1).to_string())
+        share = (au.loc[ca, "close_size"] / pr.loc[ca, "volume"]).dropna()
+        print(f"   closing cross share of 1DayPrint volume: {q(share)}")
 
 
 if __name__ == "__main__":

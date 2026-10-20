@@ -2,6 +2,7 @@
 
     uv run python -m vwap_mr.data fetch --symbols SPY QQQ IWM DIA --start 2016-01-04 --vintage 2026-10
     uv run python -m vwap_mr.data fetch --timeframes 1DayPrint --adjustment raw --vintage 2026-10
+    uv run python -m vwap_mr.data refill --vintage 2026-10               # re-query sessions missing a cross
     uv run python -m vwap_mr.data exo --vintage 2026-10                 # VIX (CBOE), DTB3 (FRED API)
     uv run python -m vwap_mr.data diag --vintage 2026-10                # Yahoo SPY 1993-2015, splice check
     uv run python -m vwap_mr.data quality --vintage 2026-10             # -> results/data_quality.csv
@@ -19,7 +20,7 @@ import pandas as pd
 
 from vwap_mr.config import CACHE_DIR, DEV_START, HOLDOUT_START, RESULTS_DIR
 from vwap_mr.data.alpaca import ts
-from vwap_mr.data.bars import load_bars
+from vwap_mr.data.bars import load_bars, refill_missing_crosses
 from vwap_mr.data.calendar import get_calendar
 from vwap_mr.data.exo import SERIES, load_series
 from vwap_mr.data.quality import QUALITY_TIMEFRAMES, quality_report
@@ -31,7 +32,7 @@ SYMBOLS = ["SPY", "QQQ", "IWM", "DIA"]
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["fetch", "exo", "diag", "quality", "freeze", "verify"])
+    p.add_argument("command", choices=["fetch", "refill", "exo", "diag", "quality", "freeze", "verify"])
     p.add_argument("--vintage", required=True)
     p.add_argument("--symbols", nargs="+", default=SYMBOLS)
     p.add_argument(
@@ -61,6 +62,9 @@ def main(argv: list[str] | None = None) -> None:
                         print(f"[DATA]  {sym} 1DayAuction cached to {stop.date()}", flush=True)
                 df = load_bars(sym, tf, a.start, a.end, adjustment=a.adjustment, **kw)
                 print(f"[DATA]  {sym:5s} {tf:9s} {len(df):>9,} bars  {df.index[0]} -> {df.index[-1]}")
+    elif a.command == "refill":
+        for sym in a.symbols:
+            print(json.dumps({sym: refill_missing_crosses(sym, vintage=a.vintage, cache_root=a.cache_root)}))
     elif a.command == "exo":
         for name in SERIES:
             df = load_series(name, "1990-01-01", a.end, **kw)

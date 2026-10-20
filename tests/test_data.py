@@ -51,6 +51,7 @@ class FakeSource:
         self.calendar_calls = 0
         self.delay: dict = {}  # "YYYY-MM-DD open|close" -> cross printed late
         self.missing: set[str] = set()  # "YYYY-MM-DD open|close" -> no cross at all
+        self.official_only: set[str] = set()  # "YYYY-MM-DD open|close" -> only the Q / M official report
         self.divs = divs if divs is not None else {"2024-11-27": 0.5}
 
     @staticmethod
@@ -74,6 +75,11 @@ class FakeSource:
                     continue
                 px = self.cross(d, side)
                 stamp = at.tz_convert("UTC").isoformat()
+                if key in self.official_only:
+                    out.append(
+                        {"t": stamp, "p": px, "s": 4000, "x": "P", "c": [" ", "Q" if side == "open" else "M"]}
+                    )
+                    continue
                 out += [{"t": stamp, "p": px, "s": 5000, "x": "P", "c": [" ", cond]},
                         {"t": stamp, "p": px, "s": 5000, "x": "P", "c": [" ", cond]},
                         {"t": stamp, "p": px + 0.5, "s": 100, "x": "T", "c": [" ", cond, "X"]},
@@ -781,3 +787,19 @@ def test_intraday_family_shares_the_auction_dividend_factor(root):
     )
     with pytest.raises(ValueError, match="reconciled"):
         _load(root, "5Min", "2024-11-18", "2024-12-10", src, adjustment="split")
+
+
+def test_official_report_used_when_cross_print_absent_and_refill(root, monkeypatch):
+    src = FakeSource()
+    src.missing.add("2024-11-27 close")
+    _load(root, "1DayAuction", "2024-11-25", "2024-12-03", src, adjustment="raw")
+    src.missing.clear()
+    src.official_only.add("2024-11-27 close")  # Alpaca has only the M (official close) report
+    rep = bars.refill_missing_crosses("SPY", vintage="t", cache_root=root, source=src)
+    assert rep["close"] == ["2024-11-27"] and rep["close_still_missing"] == [] and rep["open"] == []
+    a = _load(root, "1DayAuction", "2024-11-25", "2024-12-03", src, adjustment="raw")
+    d = pd.Timestamp("2024-11-27", tz=NY)
+    assert a.loc[d, "close"] == FakeSource.cross("2024-11-27", "close") and a.loc[d, "close_size"] == 4000
+    freeze(vintage_dir("t", root))
+    with pytest.raises(FrozenVintageError):
+        bars.refill_missing_crosses("SPY", vintage="t", cache_root=root, source=src)

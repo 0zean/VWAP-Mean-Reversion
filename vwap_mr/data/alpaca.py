@@ -37,7 +37,9 @@ NATIVE_MINUTES = {
 
 # Listing exchange in Alpaca's SIP exchange codes (P = NYSE Arca; T = Nasdaq, as Alpaca reports its crosses)
 PRIMARY_EXCHANGE = {"SPY": "P", "IWM": "P", "DIA": "P", "QQQ": "T"}
-OPEN_CROSS, CLOSE_CROSS = "O", "6"
+# The cross print (O = opening, 6 = closing) first; else the listing exchange's official open / close report
+# (Q / M), which carries the same price (seen where Alpaca lacks the cross print, e.g. SPY 2025-09-05)
+OPEN_CROSS, CLOSE_CROSS = ("O", "Q"), ("6", "M")
 
 
 def ts(x) -> pd.Timestamp:
@@ -157,11 +159,18 @@ class AlpacaSource:
         return {k: [r for r in v if r.get("symbol") == symbol] for k, v in raw.items()}
 
 
-def auction_from_trades(trades: list[dict], primary: str, condition: str) -> tuple[float, float, int] | None:
+def auction_from_trades(
+    trades: list[dict], primary: str, conditions: tuple[str, ...]
+) -> tuple[float, float, int] | None:
     """(price, size, n_distinct_prices) of the listing exchange's cross: the largest trade at `primary` carrying
-    `condition`; None if there is none. Duplicate reports of one cross are common; distinct prices are counted for
-    the quality report, never averaged."""
-    hits = [t for t in trades if t.get("x") == primary and condition in (t.get("c") or [])]
+    `conditions[0]`, else the first later condition present; None if there is none. Duplicate reports of one cross
+    are common; distinct prices are counted for the quality report, never averaged."""
+    at_primary = [t for t in trades if t.get("x") == primary]
+    hits = []
+    for cond in conditions:
+        hits = [t for t in at_primary if cond in (t.get("c") or [])]
+        if hits:
+            break
     if not hits:
         return None
     best = max(hits, key=lambda t: t["s"])
