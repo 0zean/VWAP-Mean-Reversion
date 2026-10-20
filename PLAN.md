@@ -266,16 +266,20 @@ time; the engine builds the view.
 
 ```python
 class DecisionView(NamedTuple):
-    sessions: pd.DataFrame      # completed sessions ≤ t (close decision) or ≤ t−1 (t1545 decision); 1DayPrint close
+    sessions: (
+        pd.DataFrame
+    )  # completed sessions ≤ t (close decision) or ≤ t−1 (t1545 decision); 1DayPrint close
     snapshot: pd.Series | None  # t1545 only: last trade, RTH volume and session VWAP to 15:45 of session t
     state: pd.DataFrame | None  # state variables aligned to the same cut-off
-    exo: Exo                    # .asof(decision_time)
+    exo: Exo  # .asof(decision_time)
+
 
 class Strategy(Protocol):
     name: str
     decision: Literal["close", "t1545"]
-    fill: Literal["next_open", "moc"]       # close → next_open (OPG); t1545 → moc (CLS)
-    def target(self, view: DecisionView) -> float: ...   # target exposure f_t ∈ [−1, 1], fraction of equity
+    fill: Literal["next_open", "moc"]  # close → next_open (OPG); t1545 → moc (CLS)
+
+    def target(self, view: DecisionView) -> float: ...  # target exposure f_t ∈ [−1, 1], fraction of equity
 ```
 
 A region is a `Strategy` whose target is the equal-weight mean of its cells'. A gate multiplies a target by a
