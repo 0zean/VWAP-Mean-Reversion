@@ -5,7 +5,8 @@ view and knows fill prices, the strategy does not.
 
 - `close` decision (16:25 ET): `sessions` = completed sessions ≤ t; `snapshot` None; fill `next_open`.
 - `t1545` decision: `sessions` ≤ t−1; `snapshot` = session t's snap1545 row; fill `moc`.
-- `state` rows ≤ t (row t is defined as the state at t's decision time); `exo` answers only at the decision instant.
+- `state`: row t is the state as of session t's **close** decision (it may use close_t), so a close view gets rows
+  ≤ t and a t1545 view rows ≤ t−1; `exo` answers only at the decision instant.
 
 A strategy may also implement `targets(market) -> pd.Series` (one target per session, the decision of that session)
 for speed; `target_series(..., vectorized=False)` evaluates `target` per session through the views, and the two are
@@ -63,8 +64,19 @@ def views(market: Market, decision: DecisionTime) -> Iterator[DecisionView]:
             if market.snapshot is None:
                 raise ValueError("a t1545 decision needs Market.snapshot (snap1545)")
             sess = s.iloc[:i]
-            snap = market.snapshot.loc[t] if t in market.snapshot.index else None
-        state = None if market.state is None else market.state.loc[:t]
+            if t not in market.snapshot.index:
+                raise ValueError(
+                    f"no snap1545 row for {t.date()} (a t1545 decision cannot be made without it)"
+                )
+            snap = market.snapshot.loc[t]
+        if market.state is None:
+            state = None
+        else:
+            state = (
+                market.state.loc[:t]
+                if decision == DecisionTime.CLOSE
+                else market.state[market.state.index < t]
+            )
         exo = None if market.exo is None else ExoView(market.exo, when[i])
         yield DecisionView(sess, snap, state, exo, when[i])
 

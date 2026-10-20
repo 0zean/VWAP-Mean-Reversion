@@ -7,7 +7,8 @@
   strategies (exact close-to-close returns; the engine itself never uses adjusted prices);
 - `volume`: the 1DayPrint consolidated volume (the headline VWAP weight);
 - optional `open_fallback_raw`, `close_fallback_raw`: the first / last RTH 5Min open / close, used by the engine only
-  where a cross is missing, and counted (Result.fallbacks).
+  where a cross is missing, and counted (Result.fallbacks); `close_fallback_end`: when that last bar ended (a `moc`
+  fill at a fallback that ended by 15:45 is counted as `close_seen_at_decision`).
 
 `source` makes the U1 diag guard sticky: "alpaca" is accepted only for a frame whose `attrs["source"]` is "alpaca"
 (set by `load_market`; a frame rebuilt from columns loses it), "diag" for the secondary history (the engine refuses
@@ -36,7 +37,9 @@ class Market:
     sessions: pd.DataFrame
     source: str
     snapshot: pd.DataFrame | None = None  # snap1545 (adjusted): last, volume, vwap, n_bars
-    state: pd.DataFrame | None = None  # state variables; row t is the value as of session t's decision time
+    state: pd.DataFrame | None = (
+        None  # row t = the state as of session t's close decision (t1545 views see ≤ t−1)
+    )
     exo: Exo | None = None
     calendar: pd.DataFrame | None = None
     symbol: str = ""
@@ -98,6 +101,9 @@ def load_market(symbol: str, start, end, *, vintage: str, with_snapshot: bool = 
     if len(gaps):
         sessions["open_fallback_raw"] = np.nan
         sessions["close_fallback_raw"] = np.nan
+        sessions["close_fallback_end"] = pd.Series(
+            pd.NaT, index=sessions.index, dtype=f"datetime64[ns, {NY_TZ}]"
+        )
         for d in gaps:
             # raw 5Min of the session itself, not 1DayRTH: that drops a session whose last bar is missing, which is
             # exactly when a cross can be missing too (2019-08-12: no SIP trades 15:35-16:00 for SPY / IWM / DIA)
@@ -112,6 +118,7 @@ def load_market(symbol: str, start, end, *, vintage: str, with_snapshot: bool = 
                 bars["close"].iloc[-1],
             ]
             last_end = bars.index[-1] + pd.Timedelta(minutes=5)
+            sessions.loc[d, "close_fallback_end"] = last_end
             print(f"[MARKET] {symbol} {day.date()}: cross missing (open {np.isnan(auc.loc[d, 'open_raw'])}, close "
                   f"{np.isnan(auc.loc[d, 'close_raw'])}); RTH 5Min fallback: first bar {bars.index[0].time()}, last "
                   f"bar ends {last_end.time()}")  # fmt: skip

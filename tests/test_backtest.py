@@ -1,11 +1,14 @@
 """Backtest engine, costs, account, metrics, strategy protocol and features (U3). No network."""
 
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 from causality import assert_causal, assert_fill_after
+from scipy.stats import kurtosis as sp_kurt
+from scipy.stats import skew as sp_skew
 
 from vwap_mr.backtest import account, engine
 from vwap_mr.backtest.costs import ZERO, CostModel, fee_rates, measured, tbill_yield
@@ -576,3 +579,127 @@ def test_vwap_and_deviations_by_hand():
     assert np.isnan(rolling_vwap(pd.Series([1.0, 2.0]), pd.Series([0.0, 0.0]), 2).iloc[1])
     assert trading_deviation(p, v, 2).iloc[3] == pytest.approx(13 / ((12 * 0 + 13 * 2) / 2) - 1)
     assert state_deviation(p, v, 2).iloc[3] == pytest.approx(13 / 11.0 - 1)
+
+
+# ── Review regressions (U3 adversarial review, MINOR 1–6) ───────────────────
+
+
+@dataclass(frozen=True)
+class DivPeek:
+    """Mutant: long the session before an ex-date (reads dividend_{t+1})."""
+
+    decision: DecisionTime = CLOSE
+    fill: str = "next_open"
+    name: str = "divpeek"
+
+    def target(self, view) -> float:
+        return 0.0
+
+    def targets(self, market):
+        return (market.sessions["dividend"].shift(-1) > 0).astype(float)
+
+
+@dataclass(frozen=True)
+class FactorPeek:
+    """Mutant: reads the backward total-return factor level (close / close_raw), a function of future ex-dates."""
+
+    decision: DecisionTime = CLOSE
+    fill: str = "next_open"
+    name: str = "factorpeek"
+
+    def target(self, view) -> float:
+        return 0.0
+
+    def targets(self, market):
+        s = market.sessions
+        return pd.Series(np.where(s["close"] / s["close_raw"] < 0.99, 1.0, 0.0), index=market.index)
+
+
+@dataclass(frozen=True)
+class StateAt1545:
+    """Mutant: a t1545 strategy whose vectorized path reads state row t (built from close_t)."""
+
+    decision: DecisionTime = T1545
+    fill: str = "moc"
+    name: str = "state1545"
+
+    def target(self, view) -> float:
+        return float(np.sign(view.state["s"].iloc[-1])) if len(view.state) else 0.0
+
+    def targets(self, market):
+        return np.sign(market.state["s"].reindex(market.index)).fillna(0.0)
+
+
+@pytest.mark.parametrize("mutant", [DivPeek(), FactorPeek()])
+def test_harness_catches_dividend_and_factor_peeks(mutant):
+    m = synth(300, seed=40, div_every=10)
+    with pytest.raises(AssertionError):
+        assert_causal(lambda mk: target_series(mutant, mk), m, CLOSE)
+
+
+def test_t1545_view_hides_state_row_t_and_harness_catches_a_peek():
+    m = synth(300, seed=42)
+    m = replace(m, state=pd.DataFrame({"s": m.sessions["close"].pct_change().fillna(0.0)}, index=m.index))
+    for i, v in enumerate(views(m, T1545)):
+        assert v.state is not None and len(v.state) == i
+    assert_causal(lambda mk: target_series(StateAt1545(), mk, vectorized=False), m, T1545)
+    with pytest.raises(AssertionError):
+        assert_causal(lambda mk: target_series(StateAt1545(), mk), m, T1545)
+
+
+def test_missing_snapshot_row_raises():
+    m = synth(60, seed=43)
+    assert m.snapshot is not None
+    m2 = replace(m, snapshot=m.snapshot.drop(index=m.index[30]))
+    with pytest.raises(ValueError, match="no snap1545 row"):
+        target_series(SnapCell(), m2, vectorized=False)
+
+
+def test_metrics_against_hand_values():
+    rng = np.random.default_rng(9)
+    n = 300
+    idx = pd.bdate_range("2019-01-02", periods=n).tz_localize(NY)
+    bench = pd.Series(rng.normal(0, 0.01, n), index=idx)
+    excess = 0.5 * bench + 0.001  # beta 0.5, alpha 0.001/day exactly
+    rf = pd.Series(0.0002, index=idx)
+    lg = pd.DataFrame({"excess": excess, "net": excess + rf, "traded": 0.0, "exp_close": 1.0, "cost_ret": 0.0},
+                      index=idx)  # fmt: skip
+    lg.iloc[0] = [0.0, 0.0, 0.0, 1.0, 0.0]
+    lg.iloc[[10, 11]] = lg.iloc[[10, 11]].assign(traded=[2.0, 1.0], exp_close=[0.0, 0.0])
+    s = summary(SimpleNamespace(ledger=lg), bench)
+    x = excess.iloc[1:].to_numpy()
+    assert s["sharpe"] == pytest.approx(x.mean() / x.std(ddof=1) * np.sqrt(252), rel=1e-12)
+    assert s["sortino"] == pytest.approx(
+        x.mean() / np.sqrt(np.mean(np.minimum(x, 0) ** 2)) * np.sqrt(252), rel=1e-12
+    )
+    assert s["beta"] == pytest.approx(0.5, abs=1e-12) and s["alpha_ann"] == pytest.approx(0.252, abs=1e-10)
+    assert s["psr0"] == pytest.approx(psr(x.mean() / x.std(ddof=1), len(x), float(sp_skew(x)),
+                                          float(sp_kurt(x, fisher=False))), rel=1e-12)  # fmt: skip
+    assert s["ret_ann"] == pytest.approx(x.mean() * 252) and s["flat_share"] == pytest.approx(2 / n)
+    assert s["turnover"] == pytest.approx(3.0 / ((n - 1) / 252)) and s["worst_day"] == pytest.approx(
+        lg["net"].iloc[1:].min()
+    )
+
+
+def test_taf_cap_binds_in_the_loop_and_the_vectorized_path_refuses():
+    m = synth(10, div_every=0)
+    f = Fixed((1, 1, -1, -1, -1, 0, 0, 0, 0, 0))
+    costs = CostModel(round_trip_bp=0.0, borrow_rate=0.0)
+    with pytest.raises(ValueError, match="TAF per-trade cap"):
+        run(m, f, costs=costs, cash_yield=0.0, equity0=1e9)
+    r = run(m, f, costs=costs, cash_yield=0.0, equity0=1e9, vectorized=False)
+    assert r.ledger["taf_fee"].iloc[3] == pytest.approx(5.95)  # 2018 cap; 2e9 / ~100 per share sold
+    with pytest.raises(ValueError, match="TAF per-trade cap"):
+        reprice(r, 2.3)
+    assert reprice(r, 2.3, vectorized=False).ledger["taf_fee"].iloc[3] == pytest.approx(5.95)
+
+
+def test_moc_fill_at_a_fallback_the_decision_saw_is_counted(capsys):
+    m = synth(30, div_every=0)
+    s = m.sessions.copy()
+    s["open_fallback_raw"], s["close_fallback_raw"] = s["open_raw"], s["close_raw"] * 0.999
+    s["close_fallback_end"] = pd.Series(pd.NaT, index=s.index, dtype=f"datetime64[ns, {NY}]")
+    s.iloc[12, s.columns.get_loc("close_raw")] = np.nan
+    s.loc[s.index[12], "close_fallback_end"] = s.index[12] + pd.Timedelta(hours=15, minutes=35)
+    r = run(replace(m, sessions=s), _const(1.0, T1545, 30), costs=ZERO, cash_yield=0.0)
+    assert r.fallbacks["close_seen_at_decision"] == 1 and "already saw" in capsys.readouterr().out

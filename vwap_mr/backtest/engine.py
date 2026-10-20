@@ -210,6 +210,15 @@ def _run(market, strategy, fill, costs, cash_yield, equity0, vectorized, diagnos
         raise ValueError("equity0 must be > 0")
     targets = target_series(strategy, market, vectorized=vectorized)
     lg, fallbacks = legs(market, fill)
+    if fill == "moc" and "close_fallback_end" in market.sessions:
+        # a fallback close from a bar that ended by 15:45 is a price the decision already saw (2019-08-12)
+        end = pd.to_datetime(market.sessions["close_fallback_end"])
+        used = market.sessions["close_raw"].isna().to_numpy()
+        seen = used & (end <= market.decision_instants(DecisionTime.T1545)).to_numpy()
+        fallbacks["close_seen_at_decision"] = int(seen.sum())
+        if seen.any():
+            print(f"[ENGINE] {int(seen.sum())} moc fill(s) at a fallback close the 15:45 decision already saw: "
+                  f"{[str(d.date()) for d in market.index[seen]]}")  # fmt: skip
     y = _yield(cash_yield, market.index)
     ledger = simulate(lg, targets, fill, costs, y, equity0, vectorized=vectorized)
     return Result(ledger, targets, lg, y, strategy.name, fill, costs, float(equity0), fallbacks, diagnostic,
@@ -241,9 +250,10 @@ def run_diagnostic(market: Market, strategy, *, fill: str, costs: CostModel, cas
     return _run(market, strategy, fill, costs, cash_yield, equity0, vectorized, True)
 
 
-def reprice(result: Result, round_trip_bp: float | str) -> Result:
+def reprice(result: Result, round_trip_bp: float | str, *, vectorized: bool = True) -> Result:
     """The same targets and legs at another spread + slippage cost (fees, borrow and carry unchanged)."""
     costs = result.costs.with_round_trip(round_trip_bp)
-    ledger = simulate(result.legs, result.targets, result.fill, costs, result.cash_yield, result.equity0)
+    ledger = simulate(result.legs, result.targets, result.fill, costs, result.cash_yield, result.equity0,
+                      vectorized=vectorized)  # fmt: skip
     return Result(ledger, result.targets, result.legs, result.cash_yield, result.strategy, result.fill, costs,
                   result.equity0, result.fallbacks, result.diagnostic, result.source, result.symbol)  # fmt: skip

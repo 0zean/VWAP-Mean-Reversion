@@ -15,6 +15,7 @@ import pandas as pd
 
 from vwap_mr.backtest.market import Market
 from vwap_mr.config import DecisionTime
+from vwap_mr.data.dividends import adjustment_factor
 from vwap_mr.data.exo import Exo
 
 PRICE_COLUMNS = ("open", "close", "open_raw", "close_raw", "open_fallback_raw", "close_fallback_raw")
@@ -39,6 +40,41 @@ def _exo_cut(market: Market, c: int, decision: DecisionTime, rng, drop: bool) ->
     return Exo(frames)
 
 
+def _factor(s: pd.DataFrame) -> np.ndarray:
+    return s["factor"].to_numpy() if "factor" in s else (s["close"] / s["close_raw"]).to_numpy()
+
+
+def _rescale_snapshot(snap, old: pd.DataFrame, new: pd.DataFrame):
+    """snap1545 prices sit on the sessions' adjusted scale: move them with the recomputed factor."""
+    if snap is None:
+        return None
+    ratio = pd.Series(_factor(new) / _factor(old[: len(new)]), index=new.index).reindex(snap.index)
+    out = snap.copy()
+    for col in ("last", "vwap"):
+        out[col] = out[col].to_numpy() * ratio.to_numpy()
+    return out
+
+
+def _readjust(s: pd.DataFrame, known: int) -> None:
+    """Recompute the backward total-return factor (U1 convention) from the raw closes and dividends of rows < `known`
+    only, as a vintage ending there would, and rewrite the adjusted `open` / `close`: the levels of rows <= c embed
+    every later dividend, so a feature on adjusted levels (not ratios) reads the future unless this is redone."""
+    raw = s["close_raw"].copy()
+    if "close_fallback_raw" in s:
+        raw = raw.fillna(s["close_fallback_raw"])
+    head = s.iloc[:known]
+    days = pd.DatetimeIndex(head.index).tz_convert("America/New_York").tz_localize(None)
+    ex = head["dividend"].to_numpy() > 0
+    divs = pd.DataFrame({"amount": head["dividend"].to_numpy()[ex]}, index=days[ex])
+    factor = np.ones(len(s))
+    factor[:known] = adjustment_factor(raw.iloc[:known], divs).to_numpy()
+    for col in ("open", "close"):
+        if col in s:
+            s[col] = s[f"{col}_raw"].to_numpy() * factor
+    if "factor" in s:
+        s["factor"] = factor
+
+
 def perturb_after(market: Market, c: int, decision: DecisionTime, seed: int = 0) -> Market:
     rng = np.random.default_rng(seed)
     s = market.sessions.copy()
@@ -48,15 +84,18 @@ def perturb_after(market: Market, c: int, decision: DecisionTime, seed: int = 0)
         if col in s:
             s.iloc[c + 1 :, s.columns.get_loc(col)] *= shock
     s.iloc[c + 1 :, s.columns.get_loc("volume")] = rng.uniform(1e6, 1e8, k)
+    s.iloc[c + 1 :, s.columns.get_loc("dividend")] = np.where(
+        rng.random(k) < 0.05, rng.uniform(0.2, 0.6, k), 0.0
+    )
     if decision == DecisionTime.T1545:
         jolt = float(np.exp(rng.normal(0, 0.01)))
         for col in CLOSE_COLUMNS:
             if col in s:
                 s.iloc[c, s.columns.get_loc(col)] *= jolt
         s.iloc[c, s.columns.get_loc("volume")] = rng.uniform(1e6, 1e8)
-    snap = market.snapshot
+    _readjust(s, len(s))
+    snap = _rescale_snapshot(market.snapshot, market.sessions, s)
     if snap is not None:
-        snap = snap.copy()
         late = snap.index > market.index[c]
         for col in ("last", "vwap"):
             snap.loc[late, col] = snap.loc[late, col].to_numpy() * np.exp(
@@ -66,7 +105,12 @@ def perturb_after(market: Market, c: int, decision: DecisionTime, seed: int = 0)
     state = market.state
     if state is not None:
         state = state.copy()
-        late = state.index > market.index[c]
+        # state row c is as of c's close decision, so a t1545 decision must not depend on it either
+        late = (
+            state.index > market.index[c]
+            if decision == DecisionTime.CLOSE
+            else state.index >= market.index[c]
+        )
         state.loc[late] = rng.normal(size=(int(late.sum()), state.shape[1]))
     return replace(
         market, sessions=s, snapshot=snap, state=state, exo=_exo_cut(market, c, decision, rng, False)
@@ -80,8 +124,15 @@ def truncate_after(market: Market, c: int, decision: DecisionTime) -> Market:
         for col in (*CLOSE_COLUMNS, "volume"):
             if col in s:
                 s.iloc[c, s.columns.get_loc(col)] = np.nan
+        s.iloc[c, s.columns.get_loc("dividend")] = 0.0  # its factor step needs close_c, unknown at 15:45
+        _readjust(s, c)
+        s.iloc[c, s.columns.get_loc("close")] = np.nan
+    else:
+        _readjust(s, c + 1)
     cut = (lambda f: None if f is None else f.loc[:t])  # fmt: skip
-    return replace(market, sessions=s, snapshot=cut(market.snapshot), state=cut(market.state),
+    state = None if market.state is None else market.state.loc[:t] if decision == DecisionTime.CLOSE else         market.state[market.state.index < t]  # fmt: skip
+    snap = _rescale_snapshot(cut(market.snapshot), market.sessions, s)
+    return replace(market, sessions=s, snapshot=snap, state=state,
                    exo=_exo_cut(market, c, decision, None, True))  # fmt: skip
 
 
