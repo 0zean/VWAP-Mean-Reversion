@@ -337,7 +337,7 @@ def test_top_up_without_duplicates(root):
     assert not ext.index.has_duplicates and ext.index.is_monotonic_increasing
     full = _load(root / "fresh", "5Min", "2024-11-18", "2024-12-10")
     pd.testing.assert_frame_equal(ext, full, check_freq=False)
-    meta = json.loads((vintage_dir("t", root) / "sip/all/5Min/SPY.json").read_text())
+    meta = json.loads((vintage_dir("t", root) / "sip/raw/5Min/SPY.json").read_text())
     assert (meta["coverage_start"], meta["coverage_end"]) == ("2024-11-18", "2024-12-10")
 
 
@@ -753,3 +753,31 @@ def test_synthetic_is_seeded_and_regime_vols_differ():
     assert 0.08 < lo < 0.12 and 0.33 < hi < 0.47
     assert len(daily) == 2000 and (daily.index == midnight(daily.index)).all()
     assert resample_daily(a, gbm_5min(40, seed=11)[1]).equals(gbm_daily(40, seed=11)[0])
+
+
+def test_intraday_family_shares_the_auction_dividend_factor(root):
+    """5Min / 1DayRTH / snap1545 are cached raw and scaled by the session's 1DayAuction factor (review U1 SEVERE)."""
+    src = FakeSource()
+    raw = _load(root, "5Min", "2024-11-18", "2024-12-10", src, adjustment="raw")
+    adj = _load(root, "5Min", "2024-11-18", "2024-12-10", src)
+    auc = _load(root, "1DayAuction", "2024-11-18", "2024-12-10", src)
+    f = auc["factor"].reindex(midnight(raw.index)).to_numpy()
+    np.testing.assert_allclose(adj["close"], raw["close"] * f, rtol=1e-15)
+    assert (adj["volume"] == raw["volume"]).all()
+    before = pd.Timestamp("2024-11-26", tz=NY)
+    assert (
+        auc.loc[before, "factor"] < 1
+        and adj.loc["2024-11-26", "vwap"].iloc[0] < raw.loc["2024-11-26", "vwap"].iloc[0]
+    )
+    rth_raw = _load(root, "1DayRTH", "2024-11-18", "2024-12-10", src, adjustment="raw")
+    rth = _load(root, "1DayRTH", "2024-11-18", "2024-12-10", src)
+    assert rth.loc[before, "close"] == pytest.approx(
+        rth_raw.loc[before, "close"] * auc.loc[before, "factor"], rel=1e-15
+    )
+    snap = _load(root, "snap1545", "2024-11-18", "2024-12-10", src)
+    assert (
+        snap.loc[before, "vwap"]
+        < _load(root, "snap1545", "2024-11-18", "2024-12-10", src, adjustment="raw").loc[before, "vwap"]
+    )
+    with pytest.raises(ValueError, match="reconciled"):
+        _load(root, "5Min", "2024-11-18", "2024-12-10", src, adjustment="split")

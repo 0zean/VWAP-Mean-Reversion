@@ -5,12 +5,15 @@ bars (U1; ported from 0zean/wavelet-meta-model `data/bars.py::load_bars`, `data/
 Ranges are whole NY days `[start, end)`. Timeframes:
 - `1DayPrint`: Alpaca's native daily bar, one row per session stamped at the session's NY midnight. Used for its
   consolidated volume (it includes extended hours and the closing cross; U1 measured print / RTH-5Min = 1.05-1.19).
-  Its open / close are **not** reliable auction prints before 2023 (U1); use `1DayAuction`.
+  Its open / close are **not** reliable auction prints before 2023 (U1); use `1DayAuction`. Its `adjustment="all"`
+  prices carry Alpaca's dividend adjustment, which misses or doubles some ex-dates (dividends.py): volume only.
 - `1DayAuction`: the listing exchange's opening and closing crosses from SIP trades (alpaca.py), one row per session
   (NaN and logged where no cross is found, never filled). `adjustment="all"` (default) returns `open` / `close`
   total-return adjusted by the reconciled dividend table (dividends.py) with `open_raw`, `close_raw`, `dividend`,
   `factor`; `adjustment="raw"` returns raw prices. Always cached raw (`sip/raw/1DayAuction`).
-- `5Min`: native, RTH-filtered against the calendar (early closes respected); stamped at the bar open.
+- `5Min`: native, RTH-filtered against the calendar (early closes respected); stamped at the bar open. Cached raw;
+  `adjustment="all"` scales each session by its 1DayAuction factor (so `5Min`, `1DayRTH` and `snap1545` share the
+  reconciled dividend table with `1DayAuction`; a frozen vintage therefore needs both).
 - `1DayRTH`: resampled from `5Min`: RTH OHLC, RTH volume, session VWAP = Σ bar_vwap·volume / Σ volume. Sessions
   whose last 5Min bar is missing are dropped and logged (their close would not be the session close).
 - `snap1545`: from `5Min`, the state at the `t1545` decision (session close − 15 min): `last` = close of the last
@@ -25,6 +28,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from vwap_mr.config import CACHE_DIR, HOLDOUT_START, RESULTS_DIR, DecisionTime
@@ -51,6 +55,13 @@ from vwap_mr.data.store import (
 )
 
 TIMEFRAMES = ("1DayPrint", "1DayAuction", "5Min", "1DayRTH", "snap1545")
+OWN_ADJUSTMENT = (
+    "1DayAuction",
+    "5Min",
+    "1DayRTH",
+    "snap1545",
+)  # cached raw; "all" = reconciled dividend table
+PRICE_COLUMNS_5MIN = ("open", "high", "low", "close", "vwap")
 DERIVED_FROM = {"1DayRTH": "5Min", "snap1545": "5Min"}
 HOLDOUT = ts(HOLDOUT_START)
 # re-fetched on top-ups to detect a retroactive (dividend / split) re-adjustment
@@ -359,6 +370,23 @@ def _adjust(raw: pd.DataFrame, symbol: str, vintage: str, cache_root: Path, sour
     return out
 
 
+def _adjust_intraday(raw: pd.DataFrame, symbol: str, **kw) -> pd.DataFrame:
+    """Scale raw 5Min prices by the session's 1DayAuction factor (the same reconciled dividend table, so 5Min,
+    1DayRTH and snap1545 sit on the 1DayAuction close's level). A session without a factor raises."""
+    if raw.empty:
+        return raw
+    days = _naive_days(raw.index)
+    auc = load_bars(symbol, "1DayAuction", days[0], days[-1] + pd.Timedelta(days=1), **kw)
+    factor = auc["factor"].reindex(days.tz_localize(NY_TZ)).to_numpy()
+    if np.isnan(factor).any():
+        bad = sorted({str(d.date()) for d in days[np.isnan(factor)]})
+        raise ValueError(f"{symbol}: no 1DayAuction factor for sessions {bad[:10]}")
+    out = raw.copy()
+    for c in PRICE_COLUMNS_5MIN:
+        out[c] = out[c] * factor
+    return out
+
+
 def log_forward_access(event: dict, path: Path = FORWARD_ACCESS) -> None:
     """Append one audit row for a read past HOLDOUT_START (PLAN.md §4)."""
     row = {"at": pd.Timestamp.now(tz="UTC").isoformat(), **event}
@@ -418,13 +446,21 @@ def load_bars(
                             "start": start.date(), "end": end.date(), "vintage": vintage}, forward_log)  # fmt: skip
     calendar = get_calendar(vdir, end, source=source)
     native_tf = DERIVED_FROM.get(timeframe, timeframe)
-    auction = timeframe == "1DayAuction"
-    if auction and adjustment not in ("all", "raw"):
-        raise ValueError(f"1DayAuction adjustment is 'all' (own dividend table) or 'raw', not {adjustment!r}")
+    own = timeframe in OWN_ADJUSTMENT
+    if own and adjustment not in ("all", "raw"):
+        raise ValueError(
+            f"{timeframe} adjustment is 'all' (reconciled dividend table) or 'raw', not {adjustment!r}"
+        )
     df = _native(symbol, native_tf, start, end, vdir=vdir, frozen=frozen, feed=feed,
-                 adjustment="raw" if auction else adjustment, source=source, calendar=calendar)  # fmt: skip
-    if auction and adjustment == "all":
-        df = _adjust(df, symbol, vintage, cache_root, source)
+                 adjustment="raw" if own else adjustment, source=source, calendar=calendar)  # fmt: skip
+    if not allow_forward:  # research factors never see a holdout dividend or price (live cache)
+        df = df[df.index < HOLDOUT.tz_localize(NY_TZ)]
+    if own and adjustment == "all":
+        if timeframe == "1DayAuction":
+            df = _adjust(df, symbol, vintage, cache_root, source)
+        else:
+            df = _adjust_intraday(df, symbol, vintage=vintage, allow_forward=allow_forward, feed=feed,
+                                  cache_root=cache_root, source=source, forward_log=forward_log)  # fmt: skip
     out = df[(df.index >= start.tz_localize(NY_TZ)) & (df.index < end.tz_localize(NY_TZ))]
     if timeframe == "1DayRTH":
         return resample_daily(out, calendar, label=f"{symbol} {timeframe}: ")
