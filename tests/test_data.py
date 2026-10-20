@@ -805,6 +805,23 @@ def test_official_report_used_when_cross_print_absent_and_refill(root, monkeypat
         bars.refill_missing_crosses("SPY", vintage="t", cache_root=root, source=src)
 
 
+def test_listing_exchange_is_a_set_of_codes():
+    """QQQ's Nasdaq crosses are reported as T before mid-2023 and Q after; an Arca decoy is never taken."""
+    from vwap_mr.data.alpaca import PRIMARY_EXCHANGE, auction_from_trades
+
+    old = [
+        {"x": "T", "p": 293.18, "s": 174527, "c": ["@", "O", "X"]},
+        {"x": "P", "p": 293.25, "s": 10, "c": ["@", "O"]},
+    ]
+    new = [
+        {"x": "Q", "p": 454.54, "s": 115377, "c": ["@", "O", "X"]},
+        {"x": "P", "p": 454.57, "s": 100, "c": ["@", "O"]},
+    ]
+    assert auction_from_trades(old, PRIMARY_EXCHANGE["QQQ"], ("O", "Q")) == (293.18, 174527.0, 1)
+    assert auction_from_trades(new, PRIMARY_EXCHANGE["QQQ"], ("O", "Q")) == (454.54, 115377.0, 1)
+    assert auction_from_trades(new, PRIMARY_EXCHANGE["SPY"], ("O", "Q")) == (454.57, 100.0, 1)
+
+
 def test_fixture_quarter_is_consistent(cal):
     """The checked-in real quarter (SPY 2024Q1 from vintage_2026-10): 5Min raw RTH bars and the adjusted 1DayAuction
     frame with 1DayPrint volume. Used by later units; this pins its shape and invariants."""
@@ -814,7 +831,10 @@ def test_fixture_quarter_is_consistent(cal):
     five = pd.read_parquet(fx / "spy_2024q1.parquet")
     daily = pd.read_parquet(fx / "spy_2024q1_daily.parquet")
     assert len(daily) == 61 and not daily.isna().any(axis=None) and len(five) == 61 * 78
-    assert str(pd.DatetimeIndex(five.index).tz) == NY and (five.index.strftime("%H:%M") <= "15:55").all()
+    assert (
+        str(pd.DatetimeIndex(five.index).tz) == NY
+        and (pd.DatetimeIndex(five.index).strftime("%H:%M") <= "15:55").all()
+    )
     r = daily["close"].pct_change().iloc[1:]
     tr = ((daily["close_raw"] + daily["dividend"]) / daily["close_raw"].shift() - 1).iloc[1:]
     np.testing.assert_allclose(r, tr, rtol=0, atol=1e-12)

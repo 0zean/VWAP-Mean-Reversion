@@ -35,8 +35,9 @@ NATIVE_MINUTES = {
 }  # None = Alpaca's daily bar (consolidated volume; its open/close are not the crosses, see 1DayAuction)
 
 
-# Listing exchange in Alpaca's SIP exchange codes (P = NYSE Arca; T = Nasdaq, as Alpaca reports its crosses)
-PRIMARY_EXCHANGE = {"SPY": "P", "IWM": "P", "DIA": "P", "QQQ": "T"}
+# Listing exchange in Alpaca's SIP exchange codes. P = NYSE Arca. Nasdaq's crosses appear as T until mid-2023 and
+# as Q after (both on some transition days; U1 live smoke), so a listing exchange is a set of codes.
+PRIMARY_EXCHANGE = {"SPY": ("P",), "IWM": ("P",), "DIA": ("P",), "QQQ": ("Q", "T")}
 # The cross print (O = opening, 6 = closing) first; else the listing exchange's official open / close report
 # (Q / M), which carries the same price (seen where Alpaca lacks the cross print, e.g. SPY 2025-09-05)
 OPEN_CROSS, CLOSE_CROSS = ("O", "Q"), ("6", "M")
@@ -160,12 +161,12 @@ class AlpacaSource:
 
 
 def auction_from_trades(
-    trades: list[dict], primary: str, conditions: tuple[str, ...]
+    trades: list[dict], primary: tuple[str, ...], conditions: tuple[str, ...]
 ) -> tuple[float, float, int] | None:
     """(price, size, n_distinct_prices) of the listing exchange's cross: the largest trade at `primary` carrying
     `conditions[0]`, else the first later condition present; None if there is none. Duplicate reports of one cross
     are common; distinct prices are counted for the quality report, never averaged."""
-    at_primary = [t for t in trades if t.get("x") == primary]
+    at_primary = [t for t in trades if t.get("x") in primary]
     hits = []
     for cond in conditions:
         hits = [t for t in at_primary if cond in (t.get("c") or [])]
