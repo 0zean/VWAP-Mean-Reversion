@@ -175,7 +175,7 @@ def main(argv=None) -> None:
           f"quartiles {np.percentile(lags_c, 25):.0f} / {np.percentile(lags_c, 75):.0f}, share ≤ 120 "
           f"{np.mean(lags_c <= 120):.3f}; pre-shift P > 0.5 {np.mean(pre_c):.3f}")  # fmt: skip
 
-    print(f"8. Bai–Perron size, n {N}, ε 0.15, m_max 5, HAC bandwidth Andrews AR(1), sequential at 5 %")
+    print(f"8. Bai–Perron size, n {N}, ε 0.15, m_max 5, prewhitened Andrews HAC, sequential 5 %")
     for phi, seed in ((0.0, 115), (0.2, 116)):
         sel, f1, ud = 0, 0, 0
         for i in range(S):
