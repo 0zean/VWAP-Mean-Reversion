@@ -9,9 +9,10 @@ from itertools import combinations
 
 import numpy as np
 import pytest
-from scipy.stats import norm
+from scipy.stats import chi2, norm
 
 from vwap_mr.stats.bootstrap import (
+    andrews_bandwidth,
     circular_block_indices,
     cond_mean_test,
     hac_bartlett,
@@ -20,12 +21,15 @@ from vwap_mr.stats.bootstrap import (
     sharpe_test,
 )
 from vwap_mr.stats.breaks import (
+    _cdf_from_table,
+    _date_quantile,
     _local_level_filter,
     _resid,
     bai_perron,
     bai_perron_dates_cdf,
     bp_null,
     local_level,
+    local_level_track,
     segment_dp,
     sup_f1,
 )
@@ -196,6 +200,42 @@ def test_one_sided_conventions():
     assert cond_mean_test(up, up < 0, n_boot=200)["p"] > 0.99
 
 
+def test_one_sided_lower_bound_has_its_coverage():
+    # P(true mean ≥ lower bound) ≈ 0.95; a bound built with +q·se or the α-quantile would cover ≈ 1.0 or ≈ 0.5
+    mu, hits = 0.0003, 0
+    for i in range(300):
+        x = np.random.default_rng(3000 + i).normal(mu, 0.01, 600)
+        out = mean_test(x, n_boot=299, seed=i)
+        assert out["ci"][0] < out["mean"]
+        hits += out["ci"][0] <= mu
+    assert 0.91 <= hits / 300 <= 0.98
+
+
+def test_invalid_resamples_are_counted_and_excluded():
+    # a gate on 3 of 120 sessions: many resamples never see it on; they are counted, not silently used
+    g = np.zeros(120, dtype=bool)
+    g[[10, 60, 61]] = True
+    x = np.random.default_rng(5).normal(0, 0.01, 120)
+    out = cond_mean_test(x, g, block=5, n_boot=500, seed=1)
+    assert out["n_invalid"] > 0
+    valid = 500 - out["n_invalid"]
+    assert out["p"] * (valid + 1) == pytest.approx(round(out["p"] * (valid + 1)))  # p's denominator is M′ + 1
+
+
+def test_andrews_bandwidth():
+    rng = np.random.default_rng(6)
+    assert andrews_bandwidth(rng.normal(0, 1, 2500)) < 4  # iid: ≈ 1
+    b = andrews_bandwidth(_ar1(2500, 0.2, rng))
+    rho = 0.2
+    expected = 1.1447 * (4 * rho**2 / ((1 - rho) ** 2 * (1 + rho) ** 2) * 2500) ** (1 / 3)
+    assert b == pytest.approx(expected, rel=0.25)
+    x = _ar1(500, 0.3, rng)
+    z = x - x.mean()
+    gam = [z @ z / 500, z[1:] @ z[:-1] / 500, z[2:] @ z[:-2] / 500]  # Γ_j = Σ z_t z_{t−j} / T
+    expected = gam[0] + 2 * (1 - 1 / 2.5) * gam[1] + 2 * (1 - 2 / 2.5) * gam[2]  # fractional b: lags j < 2.5
+    assert hac_bartlett(x[:, None], 2.5)[0, 0] == pytest.approx(expected, rel=1e-12)
+
+
 def test_block_bootstrap_preserves_lag1_autocorrelation_within_10pct():
     rng = np.random.default_rng(9)
     x = _ar1(2500, 0.3, rng)
@@ -307,8 +347,6 @@ def test_segment_dp_matches_brute_force():
 
 
 def test_break_date_cdf_matches_bai_1997_and_simulation():
-    from vwap_mr.stats.breaks import _date_quantile
-
     assert bai_perron_dates_cdf(0.0) == pytest.approx(0.5)
     assert _date_quantile(0.975) == pytest.approx(11.03, abs=0.01)  # Bai (1997): 95 % interval ±11.03
     assert _date_quantile(0.95) == pytest.approx(7.69, abs=0.01)
@@ -356,6 +394,30 @@ def test_bai_perron_finds_a_planted_break_and_rejects_none_on_noise():
     assert flat["n_breaks"] == 0 and flat["breaks"] == [] and flat["sequential"][0]["p"] >= 0.05
     with pytest.raises(ValueError, match="null table"):
         bai_perron(y, eps=0.10)
+
+
+def test_bai_perron_statistics_by_definition():
+    rng = np.random.default_rng(17)
+    y = rng.normal(0, 0.01, 1200) + np.r_[np.zeros(400), np.full(400, 0.004), np.full(400, -0.002)]
+    out = bai_perron(y, bandwidth=21)
+    fits = segment_dp(y, 5, out["h"])
+    w2 = hac_bartlett((y - y.mean())[:, None], 21)[0, 0]  # ω̂² of the null (0-break) residuals
+    for m in range(1, 6):  # supF(m) = (SSR₀ − SSR_m)/(m·ω̂²₀)
+        assert out["supF"][m - 1] == pytest.approx((fits[0][0] - fits[m][0]) / (m * w2), rel=1e-12)
+    assert out["sequential"][0]["supF"] == pytest.approx(out["supF"][0], rel=1e-12)  # one supF(1), not two
+    tab = bp_null()
+    for st in out["sequential"]:
+        assert st["p"] == pytest.approx(
+            max(out["p_floor"], 1 - _cdf_from_table(tab, "supF1", st["supF"]) ** (st["l"] + 1))
+        )
+    assert out["n_breaks"] == 2
+    c = _date_quantile(0.975)
+    assert out["date_c"] == pytest.approx(c)
+    for (lo, hi), k, n in zip(out["intervals"], out["breaks"], range(2), strict=True):
+        half = math.ceil(c * out["omega2"] / (out["segment_means"][n + 1] - out["segment_means"][n]) ** 2)
+        assert (lo, hi) == (max(0, k - half - 1), min(1200, k + half + 1))
+    with pytest.raises(ValueError, match="constant"):
+        bai_perron(np.full(500, 3e-4))
 
 
 def test_bai_perron_size_on_ar1_noise_small_scale():
@@ -412,3 +474,28 @@ def test_local_level_tracks_a_large_planted_shift():
     assert first < 120 and r["P_mu_T_pos"] > 0.95
     with pytest.raises(ValueError):
         local_level(np.ones(50))
+
+
+def test_local_level_lr_mixture_and_grid_edge():
+    rng = np.random.default_rng(3)
+    y = np.cumsum(rng.normal(0, 0.05, 400)) + rng.normal(0, 1, 400)
+    r = local_level(y)
+    assert r["lr_q0"] > 0 and r["p_q0"] == pytest.approx(0.5 * chi2.sf(r["lr_q0"], 1), rel=1e-12)
+    assert r["q_at_grid_edge"] is False
+    capped = local_level(y, q_grid=np.logspace(-9, -6, 10))  # the MLE wants more than the grid allows
+    assert capped["q_at_grid_edge"] is True and capped["q"] == pytest.approx(1e-6)
+
+
+def test_local_level_track_is_causal_and_local_level_is_not():
+    rng = np.random.default_rng(4)
+    y = np.r_[np.full(600, -0.0005), np.full(600, 0.0005)] + rng.normal(0, 0.01, 1200)
+    c = 700
+    alt = y.copy()
+    alt[c + 1 :] = np.cumsum(np.random.default_rng(5).normal(0, 0.02, 1200 - c - 1))  # random walk after c
+    a, b = local_level_track(y, refit_every=63), local_level_track(alt, refit_every=63)
+    trunc = local_level_track(y[: c + 1], refit_every=63)
+    np.testing.assert_allclose(a["p_pos"][: c + 1], b["p_pos"][: c + 1], rtol=0, atol=1e-12)
+    np.testing.assert_allclose(a["p_pos"][: c + 1], trunc["p_pos"], rtol=0, atol=1e-12)
+    assert np.isnan(a["p_pos"][:252]).all() and np.isfinite(a["p_pos"][252:]).all()
+    # mutant: the whole-sample fit is caught by the same perturbation
+    assert np.abs(local_level(y)["p_pos"][: c + 1] - local_level(alt)["p_pos"][: c + 1]).max() > 1e-6

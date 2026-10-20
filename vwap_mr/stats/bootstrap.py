@@ -31,19 +31,33 @@ def circular_block_indices(n: int, block: int, n_boot: int, rng: np.random.Gener
     return ((starts[..., None] + np.arange(block)) % n).reshape(n_boot, n_blocks * block)
 
 
-def hac_bartlett(Y: np.ndarray, bandwidth: int) -> np.ndarray:
+def hac_bartlett(Y: np.ndarray, bandwidth: float) -> np.ndarray:
     """Bartlett-kernel long-run covariance of the rows of Y (T, k), demeaned: Γ0 + Σ_{j<b} (1 − j/b)(Γj + Γjᵀ),
-    Γj = Σ_t z_t z_{t−j}ᵀ / T."""
+    Γj = Σ_t z_t z_{t−j}ᵀ / T. b may be fractional (Andrews 1991's S_T)."""
     Y = np.asarray(Y, dtype=float)
     Z = (Y - Y.mean(axis=0)).reshape(len(Y), -1)
     T = len(Z)
     if not 1 <= bandwidth < T:
         raise ValueError(f"bandwidth must be in [1, T); got {bandwidth}, T={T}")
     S = Z.T @ Z / T
-    for j in range(1, bandwidth):
+    for j in range(1, int(np.ceil(bandwidth))):
         G = Z[j:].T @ Z[:-j] / T
         S += (1 - j / bandwidth) * (G + G.T)
     return S
+
+
+def andrews_bandwidth(e) -> float:
+    """Andrews (1991) Bartlett bandwidth with the AR(1) plug-in: S_T = 1.1447·(α̂·T)^{1/3},
+    α̂ = 4ρ̂² / ((1 − ρ̂)²(1 + ρ̂)²), ρ̂ the lag-1 OLS coefficient of the demeaned series (clipped to ±0.97).
+    Returned as a bandwidth for `hac_bartlett` (weights 1 − j/S_T, j < S_T; at least 1, i.e. iid)."""
+    z = np.asarray(e, dtype=float)
+    z = z - z.mean()
+    den = float(z[:-1] @ z[:-1])
+    if not den > 0:
+        raise ValueError("constant series: no bandwidth")
+    rho = float(np.clip(z[1:] @ z[:-1] / den, -0.97, 0.97))
+    a = 4 * rho**2 / ((1 - rho) ** 2 * (1 + rho) ** 2)
+    return float(max(1.0, min(1.1447 * (a * len(z)) ** (1 / 3), len(z) - 1)))
 
 
 def newey_west_ols(y, X, lags: int) -> dict:

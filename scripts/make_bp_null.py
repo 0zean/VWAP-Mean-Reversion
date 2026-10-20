@@ -1,6 +1,6 @@
 """Simulate the Bai–Perron null table `vwap_mr/stats/bp_null.csv` (SPEC.md §6, `vwap_mr/stats/breaks.py`).
 
-    uv run python scripts/make_bp_null.py [--n 400] [--reps 20000] [--seed 0]
+    uv run python scripts/make_bp_null.py [--n 2000] [--reps 10000] [--seed 0]   (≈ 7 minutes)
 
 Under H0 (no break, long-run variance 1) supF(m) → the functional (SSR₀ − SSR_m)/m of Brownian motion, minimised
 over partitions with segments ≥ ε. The script evaluates it on iid N(0, 1) series of length N with known variance by

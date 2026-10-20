@@ -11,7 +11,8 @@ read. Every seed is fixed below, before the first run.
 5. Block bootstrap (block 21): mean lag-1 autocorrelation of resamples vs the sample's, AR(1) φ 0.1 / 0.3 / 0.5.
 6. Ledoit–Wolf paired Sharpe test size at ρ 0.9.
 7. Local-level tracker: q → 0 detection on iid noise; the planted 10 bp/day shift (−5 → +5 bp at σ 1 %, n 2,500,
-   shift at 1,250): first session after the shift with P(μ_t > 0) > 0.5, at the MLE q and at fixed q.
+   shift at 1,250): first session after the shift with P(μ_t > 0) > 0.5, at the whole-sample MLE q (not causal:
+   a lower bound), at fixed q, and on the causal track (`local_level_track`, refit every 63).
 8. Bai–Perron size (any break selected at 5 %) on AR(1) noise, φ 0 and 0.2, n 2,500.
 """
 
@@ -22,7 +23,7 @@ import numpy as np
 from scipy.stats import norm
 
 from vwap_mr.stats.bootstrap import circular_block_indices, cond_mean_test, sharpe_test
-from vwap_mr.stats.breaks import _local_level_filter, bai_perron, local_level
+from vwap_mr.stats.breaks import _local_level_filter, bai_perron, local_level, local_level_track
 from vwap_mr.stats.multiplicity import holm
 from vwap_mr.stats.power import garch_t, mde_cond_diff, mde_mean, simulate_rejection
 from vwap_mr.stats.sharpe import min_track_record_length, psr
@@ -161,15 +162,28 @@ def main(argv=None) -> None:
     for j, q in enumerate(fixed):
         print(f"    fixed q {q:.0e}: memory ≈ {1 / np.sqrt(q):5.0f} sessions; lag median {np.median(flags[:, j]):4.0f}, "
               f"share ≤ 120 {np.mean(flags[:, j] <= 120):.3f}; pre-shift P > 0.5 {fpre[:, j].mean():.3f}")  # fmt: skip
+    S7c = min(S, 100)
+    lags_c, pre_c = [], []
+    for i in range(S7c):  # the causal track: q̂ refitted on the past every 63 sessions
+        y = mu + np.random.default_rng(114_000 + i).normal(0, SIGMA, N)
+        tr = local_level_track(y, refit_every=63)
+        after = np.flatnonzero(tr["p_pos"][N // 2 :] > 0.5)
+        lags_c.append(after[0] if len(after) else np.inf)
+        pre_c.append(np.mean(tr["p_pos"][N // 2 - 250 : N // 2] > 0.5))
+    lags_c = np.array(lags_c, dtype=float)
+    print(f"    causal track (refit every 63, first {S7c} of the same series): lag median {np.median(lags_c):.0f}, "
+          f"quartiles {np.percentile(lags_c, 25):.0f} / {np.percentile(lags_c, 75):.0f}, share ≤ 120 "
+          f"{np.mean(lags_c <= 120):.3f}; pre-shift P > 0.5 {np.mean(pre_c):.3f}")  # fmt: skip
 
-    print(f"8. Bai–Perron size, n {N}, ε 0.15, m_max 5, HAC bandwidth 21, sequential at 5 %")
+    print(f"8. Bai–Perron size, n {N}, ε 0.15, m_max 5, HAC bandwidth Andrews AR(1), sequential at 5 %")
     for phi, seed in ((0.0, 115), (0.2, 116)):
-        sel, f1 = 0, 0
+        sel, f1, ud = 0, 0, 0
         for i in range(S):
             out = bai_perron(ar1(N, phi, np.random.default_rng(seed * 10_000 + i)))
             sel += out["n_breaks"] > 0
             f1 += out["supF_p"][0] < 0.05
-        print(f"  AR(1) φ {phi}: any break selected {sel / S:.3f}; supF(1) p < 0.05 {f1 / S:.3f} "
+            ud += out["UDmax_p"] < 0.05
+        print(f"  AR(1) φ {phi}: any break selected {sel / S:.3f}; supF(1) p < 0.05 {f1 / S:.3f}; UDmax p < 0.05 {ud / S:.3f} "
               f"(MC se {np.sqrt(0.05 * 0.95 / S):.3f}, {S} sims)")  # fmt: skip
     print(f"done in {time.time() - t0:.0f}s")
 
