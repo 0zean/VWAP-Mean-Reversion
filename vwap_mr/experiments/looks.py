@@ -12,13 +12,13 @@ the runner's ledger; looks are the wider count of what was examined, including w
 """
 
 import json
-import math
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
 from vwap_mr.config import RESULTS_DIR, ROOT
 from vwap_mr.experiments.ledger import Ledger
+from vwap_mr.stats.multiplicity import bonferroni  # noqa: F401  (re-exported for the looks report)
 
 LOOKS_PATH = RESULTS_DIR / "looks.jsonl"
 
@@ -69,10 +69,3 @@ def looks(path: Path = LOOKS_PATH) -> list[dict]:
 def looks_total(path: Path = LOOKS_PATH) -> int:
     """K: the configurations examined so far."""
     return int(sum(int(r["n"]) for r in looks(path)))
-
-
-def bonferroni(p: float, k: int) -> float:
-    """The Bonferroni bound on a p-value over K looks (capped at 1); a NaN p raises rather than reading as 1."""
-    if math.isnan(p):
-        raise ValueError("p is NaN")
-    return float(min(1.0, p * max(int(k), 1)))
