@@ -526,7 +526,8 @@ estimators can warm up before 2016.
 hiding a dividend-adjustment mismatch; `available_at` of VIX at 15:45 vs 16:25; the vintage directory actually
 being frozen (no top-up path writes into it).
 
-**Cost.** 1½ sessions. **Depends on.** U0, §9.1. **Status.** not started.
+**Cost.** 1½ sessions. **Depends on.** U0, §9.1. **Status.** done on `unit/01-data` @ 69e6b7d, awaiting merge; 4/4
+done-when; vintage_2026-10 frozen (data_hash a2efbd9f…); `results/reports/U01_status.md`.
 
 ---
 
@@ -980,8 +981,8 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 
 | unit | title | status | verdict / key numbers |
 |---|---|---|---|
-| U0 | scaffold, protocol, hygiene | done, awaiting merge | 7 tests; K = 1; user to move `alpaca_api.yaml` → `.env` |
-| U1 | data layer, `diag`, warm-up | not started | |
+| U0 | scaffold, protocol, hygiene | done, merged | 7 tests; K = 1 |
+| U1 | data layer, `diag`, warm-up | done, awaiting merge | 43 tests; prints from `1DayAuction` (SIP crosses); own dividend table; splice corr 0.99999996; vintage_2026-10 frozen |
 | U2 | live plumbing smoke | not started | |
 | U3 | backtest, costs, account; SPEC §1–§5 | not started | |
 | U4 | statistics toolkit; SPEC §6 | not started | |
@@ -1003,6 +1004,12 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
 
 ## 11. Handoff notes and amendments (newest first)
 
+- 2026-10-20 — U1 data layer. Branch `unit/01-data` @ 69e6b7d. Done-when: 4/4 ticked
+  (`results/reports/U01_status.md`, raw output `U01_checks.md`). Looks: K was 1, is 1. Reviewer: BREAKING 0 /
+  SEVERE 1 / MINOR 6 (fixed 4, deferred 3 to U3/U8: sticky diag guard, VIX staleness bound, raw next-open legs;
+  one documented). Scope widened by the user inside U1 (amendment below): `1DayAuction` from SIP crosses and a
+  reconciled dividend table. Open questions: §9.4 (blocks U3); the RTH-volume-variant proposal. Next: merge
+  `unit/01-data`, then U3 (needs §9.4 default or answer) and U4 in parallel.
 - **2026-10-20 — U1 amendment: auction prints and dividends (user decisions, made inside U1).** The live smoke
   showed two Alpaca data problems the plan had assumed away. (1) `1DayPrint` open/close are not the official
   auction prints on many 2016–2022 sessions: SPY's close differs from the official close on 924 of 2,514 sessions
