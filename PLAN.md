@@ -600,7 +600,8 @@ and the engine's invariants tested.
 **Reviewer focus.** The compounded decomposition and its invariants; cost on flips; borrow on partial sessions;
 fee table dates; `moc` reading `snap1545` and nothing later; `same_close` leaking into a spec path.
 
-**Cost.** 1½ sessions. **Depends on.** U1. **Status.** not started.
+**Cost.** 1½ sessions. **Depends on.** U1. **Status.** done on `unit/03-backtest` @ 909762d, awaiting merge; 3/3
+done-when; SPEC.md §1–§5; `results/reports/U03_status.md`.
 
 ---
 
@@ -967,8 +968,9 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
    by feasibility (U2's evidence), not by P&L. Blocks U6's spec; the default is used if unanswered.
 3. **Data plan for the forward test:** **Basic** / Algo Trader Plus (needed for a faithful `moc` snapshot and for
    U14). Blocks U13 (and the `moc` variant).
-4. **Paper account profile:** **margin, $30k, no leverage** (shorts allowed) / cash (long-only; the short side
-   becomes a variant). Blocks U3's account check and U13.
+4. **Paper account profile:** **answered 2026-10-20: margin, $30k, no leverage** (shorts allowed; profile
+   `margin_30k`, |exposure| ≤ 1) / cash (long-only; the short side becomes a variant). Blocked U3's account check
+   and U13.
 5. **Instruments:** **SPY headline; QQQ, IWM, DIA as splits** / SPY only.
 6. **Holdout start:** **2026-01-01**. Fixed in U0; a later change is an amendment.
 7. **U14 (intraday session-VWAP family)** wanted once H1's verdict is in: yes / **decide later**.
@@ -982,9 +984,9 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | unit | title | status | verdict / key numbers |
 |---|---|---|---|
 | U0 | scaffold, protocol, hygiene | done, merged | 7 tests; K = 1 |
-| U1 | data layer, `diag`, warm-up | done, awaiting merge | 43 tests; prints from `1DayAuction` (SIP crosses); own dividend table; splice corr 0.99999996; vintage_2026-10 frozen |
+| U1 | data layer, `diag`, warm-up | done, merged | 43 tests; prints from `1DayAuction` (SIP crosses); own dividend table; splice corr 0.99999996; vintage_2026-10 frozen |
 | U2 | live plumbing smoke | not started | |
-| U3 | backtest, costs, account; SPEC §1–§5 | not started | |
+| U3 | backtest, costs, account; SPEC §1–§5 | done, awaiting merge | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
 | U4 | statistics toolkit; SPEC §6 | not started | |
 | U5 | reproduce and diagnose | not started | K = |
 | U6 | H1 existence | not started | |
@@ -1004,6 +1006,23 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
 
 ## 11. Handoff notes and amendments (newest first)
 
+- 2026-10-20 — U3 backtest engine, costs, account; SPEC.md §1–§5. Branch `unit/03-backtest` @ 909762d.
+  Done-when: 3/3 ticked (`results/reports/U03_status.md`, raw output `U03_checks.md`). Looks: K was 1, is 1 (no
+  strategy P&L read). Reviewer: BREAKING 0 / SEVERE 0 / MINOR 10 (fixed 9, deferred 1 to U5: the diag guard
+  protects the `"alpaca"` label only). §9.4 answered (margin, $30k, no leverage). U1 deferrals closed: sticky diag
+  guard (`Market.source`), `Exo.asof(max_age=)`, raw next-open legs + `dividend`. Open questions: the two proposals
+  below; the RTH-volume proposal from U1. Next: merge `unit/03-backtest`; U4 (statistics) is the remaining
+  dependency of U5; U2 can run in parallel.
+- **2026-10-20 — U3 amendment and proposals.** (1) §7 U3's sign-flip bound is off by a factor 2: under
+  `next_open`, g + g′ = 2ab·r_on·r_id exactly, so the bound is Σ|g + g′| ≤ 2·Σ|r_on·r_id| (tested; the reviewer
+  measured 0.01076 vs 0.00540 for a constant ±1 target). (2) Conventions fixed in SPEC.md, not in this file before:
+  the dividend belongs to the overnight holder; short proceeds earn nothing (a short pays the T-bill in excess
+  terms); the engine keeps the exposure at f between fills (an implicit daily rebalance, charged only on |Δf|); a
+  missing cross falls back to that session's raw 5Min bar, counted. **Proposal A (not applied):** report
+  whole-share tracking error in the account check (a 1/16 region step at $30k is ≈ 3 SPY shares; Alpaca refuses
+  fractional OPG/CLS orders). **Proposal B (not applied):** for the `moc` variant, decide in U6 whether the one
+  session per SPY / IWM / DIA whose fallback close the 15:45 decision already saw (2019-08-12) is skipped or kept
+  and reported (`fallbacks["close_seen_at_decision"]`).
 - 2026-10-20 — U1 data layer. Branch `unit/01-data` @ 69e6b7d. Done-when: 4/4 ticked
   (`results/reports/U01_status.md`, raw output `U01_checks.md`). Looks: K was 1, is 1. Reviewer: BREAKING 0 /
   SEVERE 1 / MINOR 6 (fixed 4, deferred 2 to U3/U8: sticky diag guard, VIX staleness bound; raw next-open legs
