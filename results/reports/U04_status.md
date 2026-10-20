@@ -76,7 +76,8 @@ Decisions taken inside the unit (reported here, documented in SPEC §6):
   Tests at reduced scale: `test_mean_test_size_and_power_small_scale`,
   `test_cond_mean_test_size_independent_coin_small_scale`,
   `test_block_bootstrap_preserves_lag1_autocorrelation_within_10pct` (full scale).
-- [ ] **Kalman tracker and Bai–Perron: two of three sub-items met.**
+- [x] **Kalman tracker and Bai–Perron: met as amended** (the user accepted the PLAN §11 amendment on 2026-10-20: the
+  120-session criterion is replaced by the reported operating curve below).
   - **Met: q → 0 detected and reported.**
     - The LR test of q = 0 (½χ² mixture) flags `q_zero` on 0.970 of 200 iid series (nominal 0.95).
     - P(μ_T > 0) is returned at q̂ and at q = 0.
@@ -87,7 +88,7 @@ Decisions taken inside the unit (reported here, documented in SPEC §6):
     - Any break selected at 5 %, n 2,500: φ 0: 0.053 (2,000 sims) and 0.064 (1,000), pooled **0.057**.
     - φ 0.2: 0.064 and 0.050, pooled **0.059**.
     - UDmax p-values: 0.051 / 0.059 and 0.063 / 0.045.
-  - **Not met: P(μ > 0) crosses 0.5 within 120 sessions of a planted 10 bp/day shift at σ 1 %.**
+  - **Operating curve reported (amended criterion; the original "crosses 0.5 within 120 sessions" was not met).**
     - Scenario: −5 → +5 bp/day, n 2,500, shift at 1,250.
     - At the whole-sample MLE q (not causal, so a lower bound): median lag **226** (quartiles 101 / 460), 0.305
       within 120.
@@ -97,7 +98,7 @@ Decisions taken inside the unit (reported here, documented in SPEC §6):
     - The criterion cannot be met without a high false-crossing rate. A 10 bp change at σ 1 % takes (σ/δ)² = 100
       sessions to reach a one-standard-error separation. The MLE also cannot see a q this small: q̂ ≈ 5e-6, with
       `q_zero` in 52 % of runs.
-    - Proposal in PLAN §11. The code is not tuned to pass.
+    - Amendment accepted by the user (PLAN §11); the code was not tuned to pass.
 
 ## Looks
 

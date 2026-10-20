@@ -625,15 +625,17 @@ likelihood profile). `SPEC.md` §6 with each formula and its reference.
 - [ ] Size and power: mean test size 0.05 ± 0.01 over 1,000 iid and 1,000 GARCH-t simulations at n 2,500; power ≥
       0.78 at the analytic MDE; the conditional-mean-difference test has size ≤ 0.06 when the gate is an
       independent coin with π = 0.4; the block bootstrap preserves lag-1 autocorrelation within 10 %.
-- [ ] Kalman tracker: P(μ > 0) crosses 0.5 within 120 sessions of a planted 10 bp/day shift at σ 1 %; the MLE's
-      q → 0 case is detected and reported, not silently accepted. Bai–Perron size ≤ 0.06 on stationary AR(1) noise.
+- [ ] Kalman tracker (amended 2026-10-20, §11): the operating curve for a planted 10 bp/day shift at σ 1 % is
+      reported, i.e. the crossing lag of P(μ > 0) = 0.5 against the pre-shift false-crossing share, over q and for
+      the causal track. The MLE's q → 0 case is detected and reported, not silently accepted. Bai–Perron size
+      ≤ 0.06 on stationary AR(1) noise. (Original wording: "P(μ > 0) crosses 0.5 within 120 sessions of a planted
+      10 bp/day shift at σ 1 %"; it cannot be met without a high false-crossing rate.)
 
 **Reviewer focus.** Per-period vs annualized Sharpe in PSR; raw vs excess kurtosis; one-sided conventions; the √π
 scaling in the conditional test's simulation; HAC bandwidth.
 
-**Cost.** 1 session. **Depends on.** U0. **Status.** done on `unit/04-stats` @ c043a47, awaiting merge; done-when
-1 ticked, 2 met within Monte Carlo error (GARCH-t power 0.779 vs 0.78), 3 partly: the Kalman 120-session crossing
-is not met (median 226–262; proposal in §11); SPEC.md §6; `results/reports/U04_status.md`.
+**Cost.** 1 session. **Depends on.** U0. **Status.** done, merged into `dev`; done-when 1 and 3 ticked (3 as amended,
+§11), 2 met within Monte Carlo error (GARCH-t power 0.779 vs 0.78); SPEC.md §6; `results/reports/U04_status.md`.
 
 ---
 
@@ -870,8 +872,9 @@ holdout; measure what the paper environment lets us measure.
 - `live/reconcile.py`: modelled vs actual fill per order. **Paper fills are simulated by Alpaca from the live
   quote, not auction prints**: the reconciliation measures the simulator. It is recorded as `paper_cost.csv`;
   the `measured` cost column is populated only from real one-share live trades if the user opts in (§9.8).
-- `live/monitor.py`: BOCPD (R3 configuration, λ = 126) and the U7 Kalman tracker on the **modelled** forward
-  stream; erosion trigger = E[run length] < λ/4 for 5 sessions; shock trigger = P(changepoint) > 0.5; either →
+- `live/monitor.py`: BOCPD (R3 configuration, λ = 126) and the U7 Kalman tracker (`local_level_track`, the
+  causal form; it declares its q or refit rule and the false-crossing share read off U4's operating curve, §11) on
+  the **modelled** forward stream; erosion trigger = E[run length] < λ/4 for 5 sessions; shock trigger = P(changepoint) > 0.5; either →
   flatten and alert. Because the kill switch edits the traded stream, `live/score.py` scores **two streams**: the
   registered strategy's modelled forward stream (the H5 object) and the actually traded stream (the account).
 - Weekly determinism job: every forward session's target recomputed from cached bars equals the live log.
@@ -989,7 +992,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U1 | data layer, `diag`, warm-up | done, merged | 43 tests; prints from `1DayAuction` (SIP crosses); own dividend table; splice corr 0.99999996; vintage_2026-10 frozen |
 | U2 | live plumbing smoke | not started | |
 | U3 | backtest, costs, account; SPEC §1–§5 | done, merged | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
-| U4 | statistics toolkit; SPEC §6 | done, awaiting merge | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman 120-session criterion unmet (proposal) |
+| U4 | statistics toolkit; SPEC §6 | done, merged | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman criterion amended (crossing-lag median 262 on the causal track) |
 | U5 | reproduce and diagnose | not started | K = |
 | U6 | H1 existence | not started | |
 | U7 | H2 persistence | not started | P(μ_T > 0) = |
@@ -1019,7 +1022,8 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
   - Open questions: the Kalman amendment below; whether a done-when measured at 1,000 simulations should be judged
     on pooled replications (this unit did, and says so).
   - Next: merge `unit/04-stats`. U5 then has all its dependencies (U1, U3, U4); U2 is still open.
-- **2026-10-20 — U4 amendment proposal (not applied): the Kalman crossing criterion.** §7 U4 asks that P(μ > 0)
+- **2026-10-20 — U4 amendment (applied 2026-10-20 by the user's decision, first option below; §7 U4 done-when
+  rewritten, `unit/04-stats` merged into `dev`): the Kalman crossing criterion.** §7 U4 asks that P(μ > 0)
   cross 0.5 within 120 sessions of a planted 10 bp/day shift at σ 1 %.
   - **Measured** (−5 → +5 bp/day, n 2,500): median crossing lag 226 at the whole-sample MLE q, 262 on the causal
     track. A fixed q reaches a median under 120 only for q ≥ 3e-5, and then P > 0.5 already holds on 18–25 % of
