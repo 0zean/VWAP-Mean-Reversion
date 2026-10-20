@@ -473,7 +473,8 @@ taken (label, n), reviewer findings and their disposition.
 
 **Reviewer focus.** The gitignore rule; secrets; anything still importing `trading`.
 
-**Cost.** ½ session. **Depends on.** nothing (§9.6 default used unless overridden). **Status.** not started.
+**Cost.** ½ session. **Depends on.** nothing (§9.6 default used unless overridden). **Status.** done on
+`unit/00-scaffold` @ d623674, awaiting merge; 4/4 done-when; `results/reports/U00_status.md`.
 
 ---
 
@@ -969,7 +970,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 
 | unit | title | status | verdict / key numbers |
 |---|---|---|---|
-| U0 | scaffold, protocol, hygiene | not started | |
+| U0 | scaffold, protocol, hygiene | done, awaiting merge | 7 tests; K = 1; user to move `alpaca_api.yaml` → `.env` |
 | U1 | data layer, `diag`, warm-up | not started | |
 | U2 | live plumbing smoke | not started | |
 | U3 | backtest, costs, account; SPEC §1–§5 | not started | |
@@ -992,6 +993,13 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
 
 ## 11. Handoff notes and amendments (newest first)
 
+- 2026-10-20 — U0 scaffold, protocol and hygiene. Branch `unit/00-scaffold` @ d623674. Done-when: 4/4 ticked
+  (`results/reports/U00_status.md`). Looks: K was 0, is 1 (seed). Reviewer: BREAKING 0 / SEVERE 1 / MINOR 5
+  (fixed 4, deferred 2: Windows read-during-append `PermissionError`, inherited from upstream; credentials
+  migration is the user's). Ported looks reader made strict (raises on a malformed line). Ruff now excludes
+  `*.md` (it reformatted §5's code block). Open questions: the user moves `alpaca_api.yaml` into `.env` and
+  deletes it; §9.1 and §9.4 still unanswered (defaults stand). Next: merge `unit/00-scaffold` into `dev`, then U1
+  (needs §9.1) and, in parallel, U4.
 - **2026-10-20 — v1 after adversarial review of the draft.** Sources read: `VWAP.R`, the `dev`-branch Python port,
   wavelet-meta-model's `PLAN*.md`/`REVIEW.md`/`SPEC.md`/`handoff.md` and a survey of its code. No market data was
   read; no look was taken. Changes the review forced: (1) `VWAP.R` pulls Yahoo data from **2007**, not 2012 (no
