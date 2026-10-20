@@ -102,7 +102,7 @@ P&L and no return statistic.
 
 ## Adversarial review (one pass, run before the final fetch)
 
-BREAKING 0 / SEVERE 1 / MINOR 6. Fixed 3, deferred 3 with reasons.
+BREAKING 0 / SEVERE 1 / MINOR 6. Fixed 4 (the SEVERE and three MINOR), documented 1, deferred 2 with reasons.
 
 - **SEVERE, fixed (c3bdb77).**
   - 5Min, 1DayRTH and snap1545 used Alpaca's dividend adjustment, which is wrong on 4 ex-dates. That would have offset `snap1545`/RTH-VWAP variants by 30–100 bp against `1DayAuction` closes.

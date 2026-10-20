@@ -1006,7 +1006,7 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
 
 - 2026-10-20 — U1 data layer. Branch `unit/01-data` @ 69e6b7d. Done-when: 4/4 ticked
   (`results/reports/U01_status.md`, raw output `U01_checks.md`). Looks: K was 1, is 1. Reviewer: BREAKING 0 /
-  SEVERE 1 / MINOR 6 (fixed 4, deferred 3 to U3/U8: sticky diag guard, VIX staleness bound, raw next-open legs;
+  SEVERE 1 / MINOR 6 (fixed 4, deferred 2 to U3/U8: sticky diag guard, VIX staleness bound; raw next-open legs
   one documented). Scope widened by the user inside U1 (amendment below): `1DayAuction` from SIP crosses and a
   reconciled dividend table. Open questions: §9.4 (blocks U3); the RTH-volume-variant proposal. Next: merge
   `unit/01-data`, then U3 (needs §9.4 default or answer) and U4 in parallel.
