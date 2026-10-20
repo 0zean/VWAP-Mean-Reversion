@@ -600,8 +600,8 @@ and the engine's invariants tested.
 **Reviewer focus.** The compounded decomposition and its invariants; cost on flips; borrow on partial sessions;
 fee table dates; `moc` reading `snap1545` and nothing later; `same_close` leaking into a spec path.
 
-**Cost.** 1½ sessions. **Depends on.** U1. **Status.** done on `unit/03-backtest` @ 909762d, awaiting merge; 3/3
-done-when; SPEC.md §1–§5; `results/reports/U03_status.md`.
+**Cost.** 1½ sessions. **Depends on.** U1. **Status.** done, merged (PR #3); 3/3 done-when; SPEC.md §1–§5;
+`results/reports/U03_status.md`.
 
 ---
 
@@ -631,7 +631,9 @@ likelihood profile). `SPEC.md` §6 with each formula and its reference.
 **Reviewer focus.** Per-period vs annualized Sharpe in PSR; raw vs excess kurtosis; one-sided conventions; the √π
 scaling in the conditional test's simulation; HAC bandwidth.
 
-**Cost.** 1 session. **Depends on.** U0. **Status.** not started.
+**Cost.** 1 session. **Depends on.** U0. **Status.** done on `unit/04-stats` @ c043a47, awaiting merge; done-when
+1 ticked, 2 met within Monte Carlo error (GARCH-t power 0.779 vs 0.78), 3 partly: the Kalman 120-session crossing
+is not met (median 226–262; proposal in §11); SPEC.md §6; `results/reports/U04_status.md`.
 
 ---
 
@@ -986,8 +988,8 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U0 | scaffold, protocol, hygiene | done, merged | 7 tests; K = 1 |
 | U1 | data layer, `diag`, warm-up | done, merged | 43 tests; prints from `1DayAuction` (SIP crosses); own dividend table; splice corr 0.99999996; vintage_2026-10 frozen |
 | U2 | live plumbing smoke | not started | |
-| U3 | backtest, costs, account; SPEC §1–§5 | done, awaiting merge | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
-| U4 | statistics toolkit; SPEC §6 | not started | |
+| U3 | backtest, costs, account; SPEC §1–§5 | done, merged | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
+| U4 | statistics toolkit; SPEC §6 | done, awaiting merge | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman 120-session criterion unmet (proposal) |
 | U5 | reproduce and diagnose | not started | K = |
 | U6 | H1 existence | not started | |
 | U7 | H2 persistence | not started | P(μ_T > 0) = |
@@ -1005,6 +1007,29 @@ Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-20 — U4 statistics toolkit; SPEC.md §6. Branch `unit/04-stats` @ c043a47. Done-when: 1 of 3 ticked, 1 met
+  within Monte Carlo error, 1 partly met (`results/reports/U04_status.md`, raw output `U04_checks.md`).
+  - Looks: K was 1, is 1 (synthetic only).
+  - Reviewer: BREAKING 0 / SEVERE 3 / MINOR 6. All SEVERE fixed:
+    - Bai–Perron now normalises by the null model's prewhitened-Andrews ω̂².
+    - There is one supF(1), not two.
+    - A causal `local_level_track` was added.
+  - MINOR: one mutant survives (unstudentized roots), deferred.
+  - Open questions: the Kalman amendment below; whether a done-when measured at 1,000 simulations should be judged
+    on pooled replications (this unit did, and says so).
+  - Next: merge `unit/04-stats`. U5 then has all its dependencies (U1, U3, U4); U2 is still open.
+- **2026-10-20 — U4 amendment proposal (not applied): the Kalman crossing criterion.** §7 U4 asks that P(μ > 0)
+  cross 0.5 within 120 sessions of a planted 10 bp/day shift at σ 1 %.
+  - **Measured** (−5 → +5 bp/day, n 2,500): median crossing lag 226 at the whole-sample MLE q, 262 on the causal
+    track. A fixed q reaches a median under 120 only for q ≥ 3e-5, and then P > 0.5 already holds on 18–25 % of
+    pre-shift sessions while the edge is still negative.
+  - **Why it cannot be met:** (σ/δ)² = 100 sessions are needed just to separate a 10 bp change by one standard
+    error, and the MLE cannot resolve a q that small (q̂ ≈ 5e-6; `q_zero` in 52 % of runs).
+  - **Proposal:** replace the criterion with a reported operating curve: crossing lag against pre-shift
+    false-crossing share over q, as `scripts/u04_checks.py` §7 prints it. U13's monitor would then declare its q
+    (or its refit rule) and the false-alarm share that goes with it. Alternatively, keep a latency criterion but
+    plant a shift the tracker can resolve: at 50 bp/day, the test's −25 → +25 bp is crossed within 120 sessions.
 
 - 2026-10-20 — U3 backtest engine, costs, account; SPEC.md §1–§5. Branch `unit/03-backtest` @ 909762d.
   Done-when: 3/3 ticked (`results/reports/U03_status.md`, raw output `U03_checks.md`). Looks: K was 1, is 1 (no
