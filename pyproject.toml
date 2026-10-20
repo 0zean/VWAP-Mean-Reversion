@@ -38,6 +38,7 @@ packages = ["vwap_mr"]
 
 [tool.ruff]
 line-length = 110
+extend-exclude = ["*.md"]  # PLAN.md/SPEC.md code blocks are prose, not formatted code
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
