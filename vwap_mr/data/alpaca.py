@@ -32,7 +32,7 @@ ADJUSTMENTS = ("raw", "split", "dividend", "all")
 NATIVE_MINUTES = {
     "5Min": 5,
     "1DayPrint": None,
-}  # None = Alpaca's daily bar (open/close are the auction prints)
+}  # None = Alpaca's daily bar (consolidated volume; its open/close are not the crosses, see 1DayAuction)
 
 
 # Listing exchange in Alpaca's SIP exchange codes (P = NYSE Arca; T = Nasdaq, as Alpaca reports its crosses)

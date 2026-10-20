@@ -803,3 +803,19 @@ def test_official_report_used_when_cross_print_absent_and_refill(root, monkeypat
     freeze(vintage_dir("t", root))
     with pytest.raises(FrozenVintageError):
         bars.refill_missing_crosses("SPY", vintage="t", cache_root=root, source=src)
+
+
+def test_fixture_quarter_is_consistent(cal):
+    """The checked-in real quarter (SPY 2024Q1 from vintage_2026-10): 5Min raw RTH bars and the adjusted 1DayAuction
+    frame with 1DayPrint volume. Used by later units; this pins its shape and invariants."""
+    from pathlib import Path
+
+    fx = Path(__file__).parent / "fixtures"
+    five = pd.read_parquet(fx / "spy_2024q1.parquet")
+    daily = pd.read_parquet(fx / "spy_2024q1_daily.parquet")
+    assert len(daily) == 61 and not daily.isna().any(axis=None) and len(five) == 61 * 78
+    assert str(pd.DatetimeIndex(five.index).tz) == NY and (five.index.strftime("%H:%M") <= "15:55").all()
+    r = daily["close"].pct_change().iloc[1:]
+    tr = ((daily["close_raw"] + daily["dividend"]) / daily["close_raw"].shift() - 1).iloc[1:]
+    np.testing.assert_allclose(r, tr, rtol=0, atol=1e-12)
+    assert (daily["volume"] > daily["close_size"]).all() and (daily["dividend"] > 0).sum() == 1
