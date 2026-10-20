@@ -206,17 +206,34 @@ class Exo:
                 raise ValueError(f"exo series {n!r} has rows without `available_at`")
         self._frames = {n: f.sort_index() for n, f in frames.items()}
 
-    def asof(self, name: str, when) -> np.ndarray:
+    def asof(self, name: str, when, *, max_age: pd.Timedelta | None = None) -> np.ndarray:
         """Value of the visible row with the greatest available_at (ties: the latest date) at each instant in
-        `when` (tz-aware scalar or index); NaN where nothing is visible yet."""
+        `when` (tz-aware scalar or index); NaN where nothing is visible yet. With `max_age`, a visible row whose
+        observation date (NY midnight) is older than `max_age` before the instant raises (a missing day must not
+        silently serve an old value; U1 review)."""
         if name not in self._frames:
             raise KeyError(f"exo series {name!r} not loaded (have {sorted(self._frames)})")
         f = self._frames[name]
         avail = pd.DatetimeIndex(f["available_at"]).tz_convert("UTC").as_unit("ns").asi8
         dates = pd.DatetimeIndex(f.index).as_unit("ns").asi8
         order = np.lexsort((dates, avail))
-        pos = np.searchsorted(avail[order], _ns_utc(when), side="right") - 1
+        at = _ns_utc(when)
+        pos = np.searchsorted(avail[order], at, side="right") - 1
         out = np.full(len(pos), np.nan)
         ok = pos >= 0
         out[ok] = f["value"].to_numpy(float)[order][pos[ok]]
+        if max_age is not None and ok.any():
+            obs = (
+                pd.DatetimeIndex(dates[order][pos[ok]])
+                .tz_localize(NY_TZ)
+                .tz_convert("UTC")
+                .as_unit("ns")
+                .asi8
+            )
+            stale = at[ok] - obs > max_age.value
+            if stale.any():
+                first = pd.Timestamp(at[ok][stale][0], tz="UTC").tz_convert(NY_TZ)
+                raise ValueError(
+                    f"{name}: {int(stale.sum())} as-of value(s) older than {max_age}, first at {first}"
+                )
         return out
