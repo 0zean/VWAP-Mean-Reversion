@@ -696,7 +696,7 @@ cost curve, splits, verdict).
 **Reviewer focus.** Expected magnitude vs U5's tables (no inflation); the headline fill is the one U2 showed
 executable; the `moc` variant present only if §9.2/§9.3 allow it.
 
-**Cost.** 1 session. **Depends on.** U5, §9.2. **Status.** done on `unit/06-h1` (2d39c0a), not merged; 3/3
+**Cost.** 1 session. **Depends on.** U5, §9.2. **Status.** done, merged into `dev` (5f150e0); 3/3
 done-when; **rejected (diagnostic)**; K 112 → 139; `results/reports/U06_H1.md`, `U06_status.md`.
 
 ---
@@ -999,7 +999,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U3 | backtest, costs, account; SPEC §1–§5 | done, merged | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
 | U4 | statistics toolkit; SPEC §6 | done, merged | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman criterion amended (crossing-lag median 262 on the causal track) |
 | U5 | reproduce and diagnose | done, merged | K = 112 (every window; 48 dev rows); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
-| U6 | H1 existence | done, not merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
+| U6 | H1 existence | done, merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
 | U7 | H2 persistence | not started | P(μ_T > 0) = |
 | U8 | state estimators + noise study | not started | |
 | U9 | regime models + detection study | not started | |
@@ -1017,6 +1017,11 @@ accesses = 0.
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- **2026-10-21 — U6 rulings (user) and merge.** `unit/06-h1` merged into `dev` (5f150e0). **The §6.2 routing after
+  "rejected" is followed:** U7 (H2) runs on the H1 headline stream as registered. H3 and H4 then run on `diag`
+  with the vol baseline only, as diagnostics, and the program reports a null. Consequence for U7: no conditional
+  table is computed on `diag`, because those sessions are H3's test sample. Next: U7.
 
 - 2026-10-21 — U6 H1 registration and existence test. Branch `unit/06-h1` @ 2d39c0a (spec registered at 138a7b2).
   Done-when: 3/3 ticked (`results/reports/U06_status.md`, report `U06_H1.md`).
