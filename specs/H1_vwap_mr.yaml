@@ -1,0 +1,58 @@
+# H1 — existence of the VWAP mean-reversion edge (PLAN.md §6.1, §6.2, §7 U6). Pre-registration: the runner runs this
+# file once, from its committed SHA (recorded in every ledger row as spec_sha). An amendment is a new file.
+id: H1_vwap_mr
+mechanism: >
+  Daily index-ETF returns revert at short horizons (lag-1 autocorrelation and VR(10) below their random-walk values
+  on diag 1993-2015 and on 2016-2025, U5 §3). A close that sits above (below) its n-session volume-weighted average
+  is sold (bought) at the next opening cross and held until the signal changes; R0 averages the 16 cells
+  n in {2, 3, 5, 10} x b in {0, 0.10, 0.25, 0.50 %} fixed in PLAN §6.1 before any development-window P&L was read.
+instruments:
+  headline: SPY
+  splits: [QQQ, IWM, DIA]
+window: {start: 2016-01-04, end: 2025-12-31}
+vintage: "2026-10"
+strategy: {name: vwap_mr, region: R0}
+execution: {decision: close, fill: next_open}  # PLAN §9.2 default (unanswered): close at 16:25 ET -> OPG
+cost:
+  registered_bp: 1.0       # spread + slippage per round trip, until `measured`
+  curve: [0.0, 0.3, 1.0, 2.3]
+  borrow_rate: 0.004       # short borrow per year (ACT/360)
+  fees: true               # SEC Section 31 and FINRA TAF on sells, dated table
+account: margin_30k        # PLAN §9.4
+test:
+  kind: mean_vs_zero       # statistic: mean daily net excess return of R0 on SPY at the registered cost
+  sided: one               # H1: mean > 0
+  block: 21
+  n_boot: 5000
+  seed: 0
+  alpha: 0.05              # confirmed
+  promising_alpha: 0.10    # promising (one-sided 90 % lower bound > 0)
+floors:
+  net_excess_ann_min: 0.03 # net excess return >= 3 %/yr at 1x notional
+  gross_rt_multiple: 2.0   # gross edge per round trip >= 2 x registered round-trip cost
+  coherence_min: 12        # cells of 16 with a positive net mean
+expected:
+  magnitude_bp_day: 2.3
+  source: >
+    U5 §5-6 (results/reports/U05_diagnosis.md): R0 net excess at 1.0 bp, next_open, on diag 1993-2015, +2.31 bp/day
+    [90 % +0.50, +4.11]; an upper value, carried by 2007-09 (0.7-1.4 bp/day outside it).
+power:
+  n: 2513                  # development-window return sessions
+  sigma_d_bp: 92.4         # R0's daily excess sigma on diag (U5 §5)
+  k: 1                     # H1 is alone in its stage
+  alpha: 0.05
+  power: 0.80
+  mde_bp_day: 4.58         # (z_0.95 + z_0.80) x 92.4 / sqrt(2513)
+  power_at_expected: 0.35
+  diagnostic: true         # expected < MDE: registered as a diagnostic (user decision 2026-10-21)
+headlines: [R0]
+variants:                  # PLAN §6.1; "the other execution" (t1545 -> moc) is not built: §9.2 / §9.3 at defaults
+  - rth_volume             # VWAP weight = RTH 5Min volume + closing-cross size
+  - session_vwap           # VWAP of the sessions' own RTH VWAPs
+  - b_positive             # the 12 cells with b > 0
+  - n_le_5                 # the 12 cells with n <= 5
+  - long_only
+  - short_only
+  - vol_target_10          # target x min(1, 10 % / 21-session realized vol)
+splits: [year, vol_quintile, vix_tercile, weekday, side, leg, instruments]
+budget: 8                  # 1 headline + 7 variants

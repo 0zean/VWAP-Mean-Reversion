@@ -15,6 +15,8 @@ Windows (U5): each row names the sample it read, `"dev"` (anything touching the 
 2016-01-04 → 2025-12-31; a row without the field is a dev row, as the seed is) or `"diag"` (the secondary history
 before DEV_START only). The label is descriptive: K = `looks_total()` counts **every** row in every window (user
 ruling 2026-10-21, the conservative count); `looks_total(window="dev")` gives the development-window share.
+`check_window(index, window)` (U6) checks the label against the rows read: a "dev" look reads only sessions inside
+the development window, a "diag" look only sessions before DEV_START.
 """
 
 import json
@@ -24,7 +26,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypeVar
 
-from vwap_mr.config import RESULTS_DIR, ROOT
+import pandas as pd
+
+from vwap_mr.config import DEV_END, DEV_START, RESULTS_DIR, ROOT
 from vwap_mr.experiments.ledger import Ledger
 from vwap_mr.stats.multiplicity import bonferroni  # noqa: F401  (re-exported for the looks report)
 
@@ -44,6 +48,21 @@ def _validate_look(row: dict) -> None:
         raise ValueError("a look needs a label and an integer n >= 1")
     if row.get("window", "dev") not in WINDOWS:
         raise ValueError(f"a look's window must be one of {WINDOWS}, got {row.get('window')!r}")
+
+
+def check_window(index, window: str) -> None:
+    """Raise unless every session of `index` lies in the look's window ("dev": DEV_START … DEV_END; "diag": before
+    DEV_START)."""
+    if window not in WINDOWS:
+        raise ValueError(f"window must be one of {WINDOWS}, got {window!r}")
+    idx = pd.DatetimeIndex(index)
+    if len(idx) == 0:
+        raise ValueError("a look reads at least one session")
+    days = idx.tz_convert("America/New_York").tz_localize(None) if idx.tz is not None else idx
+    lo, hi = days.min().date(), days.max().date()
+    ok = DEV_START <= lo and hi <= DEV_END if window == "dev" else hi < DEV_START
+    if not ok:
+        raise ValueError(f"a {window!r} look read sessions {lo} → {hi}, outside its window")
 
 
 def record_look(
