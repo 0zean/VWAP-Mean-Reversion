@@ -94,7 +94,8 @@ def validate(d: dict, stem: str | None = None) -> None:
     _need(_num(e.get("magnitude_bp_day")) and isinstance(e.get("source"), str) and e["source"].strip(),
           "expected needs magnitude_bp_day and a source")  # fmt: skip
     _need(isinstance(p.get("diagnostic"), bool), "power.diagnostic must be true or false")
-    for k in ("n", "sigma_d_bp", "k", "mde_bp_day"):
+    mde = ("rho", "mde_delta_sharpe") if t["kind"] == "paired_sharpe" else ("mde_bp_day",)
+    for k in ("n", "sigma_d_bp", "k", *mde):
         _need(_num(p.get(k)), f"power.{k} must be a number")
     heads, var = d["headlines"], d["variants"]
     n_var = 12 if t["kind"] == "cond_mean_diff" else 8

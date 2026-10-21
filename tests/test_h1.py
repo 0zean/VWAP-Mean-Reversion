@@ -217,6 +217,7 @@ def test_runner_refuses_names_outside_the_registry_and_other_test_kinds(tmp_path
         dry_run(tmp_path, spec=p)
     d = spec_dict()
     d["test"]["kind"] = "paired_sharpe"
+    d["power"] |= {"rho": 0.9, "mde_delta_sharpe": 0.35}  # a valid paired_sharpe spec, refused by this runner
     p.write_text(yaml.safe_dump(d), encoding="utf-8")
     with pytest.raises(SpecError, match="mean_vs_zero"):
         dry_run(tmp_path, spec=p)
