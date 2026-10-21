@@ -1,0 +1,41 @@
+# DRAFT (U9). Not a registered spec; the runner refuses it.
+id: H4_blend
+status: draft — not registered; U11 completes it
+blend:
+  weight: w_t = 0.5 + κ (P_t − 0.5)
+  P_t: R2 one-step-ahead P(fast reversion)
+  kappa: 0.5
+  components:
+  - R0 (H1 region)
+  - TSMOM {21, 63, 126, 252}, equal weight
+regime_configuration:
+  R2:
+    model: MS-AR(1), intercept form (switching c, φ, σ²)
+    input: d*_t (§8.1, n = 5)
+    fit_window: 1008
+    refit_every: 21
+    order: by φ; regime 0 = smaller φ = fast reversion
+    swap_flag: '|φ₁ − φ₀| < 0.05'
+    output: one-step-ahead P(fast at t+1 | ≤ t)
+    favourable: P > 0.5
+    pi: reported, not fixed
+    random_walk_phi_126:
+      window: 126
+      mean: 0.7059145678476755
+      sd: 0.05480026751628675
+      q05: 0.6092228482163446
+      q95: 0.7891915044010612
+    random_walk_r2_phi_pairs:
+    - - 0.6331231890207236
+      - 0.6531226009680899
+    - - 0.6133111299707203
+      - 0.7485606473918466
+    - - 0.39071503307121913
+      - 0.7619017214381908
+    - - 0.6458285012219483
+      - 0.6949883121899287
+    - - 0.6006816905034809
+      - 0.6788892823837224
+    - - 0.6511363209803301
+      - 0.6788653053722058
+  R4: 'optional, not built (§7 U9: only if time remains after R1–R3)'

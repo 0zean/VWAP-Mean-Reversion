@@ -245,7 +245,8 @@ def main(argv=None) -> int:
          (f"AR(1) φ of d*_t (n = 5 anchor) on random walks over 126 sessions: mean {phi_null['mean']:.3f} (5–95 % "
           f"{phi_null['q05']:.3f}–{phi_null['q95']:.3f}). R2 fitted on random-walk d*_t ({len(rw_pairs)} windows of "
           f"{FIT}): φ pairs {', '.join(f'[{a_:.3f}, {b:.3f}]' for a_, b in rw_pairs)}; gap {min(gaps):.3f}–"
-          f"{max(gaps):.3f} (swap threshold 0.05). Without regimes R2 still reports two φs near the random-walk value."),
+          f"{max(gaps):.3f}; {sum(g < 0.05 for g in gaps)} of {len(gaps)} below the 0.05 swap threshold. Without regimes, "
+          f"R2 still splits d*_t into two φs, mostly near the random-walk value"),
          "",
          (f"R3 NIG prior ({'SPY diag 1993–2011, recorded as one diag look' if a.vintage else 'synthetic stand-in'}): "
           f"μ₀ {prior.mu0:.4f}, κ₀ {prior.kappa0:g}, α₀ {prior.alpha0:g}, β₀ {prior.beta0:.3f} (prior mean σ² "
