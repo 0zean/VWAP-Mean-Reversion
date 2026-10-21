@@ -1,155 +1,146 @@
-# DRAFT (U8). Not a registered spec: it lacks §8.7's required fields and the runner refuses it.
+# H3 — regime predictability of the H1 region (PLAN.md §6.4, §7 U10; routing and headline program amended
+# 2026-10-21, §11). Pre-registration: `experiments/h3.py::run_h3` runs this file once, from its committed SHA
+# (recorded in every ledger row as spec_sha). An amendment is a new file. State and regime configurations were frozen
+# in U8 / U9 from synthetic studies before any market P&L was read; only the gate rules below turn them into
+# favourable sets, and they are §6.4's table.
 id: H3_regime_gates
-status: draft — not registered; U8 states and U9 regime models frozen; U10 completes
-  and registers it
-routing: 'amended 2026-10-21 (PLAN §11): H3 runs on the development window 2016-2025
-  as a diagnostic; read under K >= 154'
-state_configuration:
-  estimators:
-  - label: E1
-    column: E1_dfa_std
-    estimator: DFA-1 standard [10, 126]
-    window_6_4: 504
-    window: 504
-    scale_set: standard [10, 126]
-    favourable: below trailing-504 median
-    pi: 0.5
-    sd_at_6_4: 0.0656
-    sd_at_window: 0.0656
-    status: under-powered
-  - label: E2
-    column: E2_dfa_short
-    estimator: DFA-1 short [4, 32]
-    window_6_4: 504
-    window: 504
-    scale_set: short [4, 32]
-    favourable: below trailing-504 median
-    pi: 0.5
-    sd_at_6_4: 0.0442
-    sd_at_window: 0.0442
-    status: under-powered
-  - label: E3
-    column: E3_av_short
-    estimator: Abry–Veitch short j 1–4
-    window_6_4: 512
-    window: 512
-    scale_set: MODWT j 1–4
-    favourable: below trailing-504 median
-    pi: 0.5
-    sd_at_6_4: 0.0531
-    sd_at_window: 0.0531
-    status: under-powered
-  - label: E4
-    column: E4_h2
-    estimator: DFA-1 standard [10, 126]
-    window_6_4: 1008
-    window: 1008
-    scale_set: standard [10, 126], q −5 … 5
-    favourable: h(2) below trailing median
-    pi: 0.5
-    sd_at_6_4: 0.0489
-    sd_at_window: 0.0489
-    status: under-powered
-  baselines:
-  - label: B1
-    column: B1_vol
-    definition: σ̂ of returns over 21; quantile vs trailing 504
-    favourable: top two quintiles
-    pi: 0.4
-  - label: B2
-    column: B2_vix
-    definition: VIX as of the decision; quantile vs trailing 504
-    favourable: top tercile
-    pi: 0.33
-  - label: B3
-    column: B3_ac1
-    definition: lag-1 autocorrelation over 63
-    favourable: < 0
-    pi: ≈ 0.5, reported
-  - label: B4
-    column: B4_phi
-    definition: AR(1) φ of d*_t over 126; quantile vs trailing 504
-    favourable: below median
-    pi: 0.5
-  - label: B5
-    column: B5_vr5
-    definition: VR(5) over 252
-    favourable: < 1
-    pi: ≈ 0.5, reported
-  - label: B6
-    column: B6_mom
-    definition: region net P&L over 63
-    favourable: '> 0'
-    pi: ≈ 0.5, reported
-  b4_random_walk_phi:
-    window: 126
-    mean: 0.7078532497242757
-    sd: 0.05397054295732081
-    q05: 0.6127894580411913
-    q95: 0.7884755657141984
+mechanism: >
+  If the daily reversal R0 trades is stronger in some market states than others, its net return conditional on a
+  favourable state known at the decision exceeds its return elsewhere (Δμ > 0). Candidates: high realized
+  volatility (B1, the direction U5 found on diag and U7 saw on 2016-2025), slow measured reversion speed of the
+  state deviation d*_t (B4), a 5-session variance ratio below one (B5: reversal at the rule's horizon), and an
+  MS-AR(1) on d*_t in its fast-reversion regime (R2).
+routing: >
+  amended 2026-10-21 (PLAN §11): H1 was rejected (diagnostic), and H3 runs on the development window 2016-2025 as a
+  diagnostic, read under K >= 154 on a stream already examined in U6 / U7.
+instruments:
+  headline: SPY
+  splits: []
+window: {start: 2016-01-04, end: 2025-12-31}
+vintage: "2026-10"
+strategy: {name: vwap_mr, region: R0}   # the H1 headline stream, rebuilt and checked against its ledger row
+execution: {decision: close, fill: next_open}
+cost:
+  registered_bp: 1.0
+  curve: [1.0]
+  borrow_rate: 0.004
+  fees: true
+account: margin_30k
+test:
+  kind: cond_mean_diff     # Δμ = mean(r_t | gate_{t-1} on) − mean(r_t | gate_{t-1} off), r = R0 net excess
+  sided: one               # H1: Δμ > 0
+  block: 21
+  n_boot: 5000
+  seed: 0
+  alpha: 0.05              # Holm over the headlines
+floors:
+  in_gate_mean_min: 0.0    # bp/day: the in-gate mean must be positive
+  pi_tolerance: 0.05       # |π realized − π registered| (gates with a registered π)
+expected:
+  magnitude_bp_day: 3.0
+  source: >
+    U7 §4 (results/reports/U07_persistence.md): on 2016-2025 the B1 favourable quintiles Q4-Q5 vs Q1-Q3 differ by
+    about 3 bp/day (+1.5 vs -1.4), the only hint of a state effect; a development-window number already read.
+power:
+  n: 2513
+  sigma_d_bp: 92.4         # R0's daily excess σ on diag (U5 §5), as in H1
+  k: 4                     # Holm over 4 headlines
+  alpha: 0.05
+  power: 0.80
+  mde_bp_day: 11.37        # π = 0.5, Holm 4: (z_{1-0.05/4} + z_0.80) · σ · sqrt(1/(πn) + 1/((1-π)n))
+  mde_by_headline: {B1: 11.60, B4: 11.37, B5: 11.37, R2: 11.37}  # B5 / R2 π reported: MDE at 0.5
+  diagnostic: true         # expected 3.0 < every MDE
+headlines: [B1, B4, B5, R2]
+variants:                  # §6.4 table + R2 hyper-parameter sensitivity (budget 12); R4 not built (U9)
+  - B2
+  - B3
+  - B6
+  - E1                     # E1-E4: under-powered (U8: no Hurst-type SD <= 0.025 at <= 1,008 sessions)
+  - E2
+  - E3
+  - E4
+  - R1
+  - R3
+  - R2_refit63
+  - R2_fit756
+  - R2_fit1512
+splits: [gated_stream, incremental, refits, episodes]
+budget: 16                 # 4 headlines + 12 variants
+gates:                     # rules: strategies/gates.py
+  B1: {column: B1_vol, rule: q_above, threshold: 0.6, pi: 0.4}            # top two quintiles of trailing 504
+  B4: {column: B4_phi, rule: q_at_or_below, threshold: 0.5, pi: 0.5}      # below the trailing-504 median
+  B5: {column: B5_vr5, rule: below, threshold: 1.0, pi: null}             # VR(5) over 252 < 1; π reported
+  R2: {column: R2_p, rule: above, threshold: 0.5, pi: null}               # P(fast at t+1 | <= t) > 0.5
+  B2: {column: B2_vix, rule: q_above, threshold: 0.6667, pi: 0.33}        # top tercile of trailing 504
+  B3: {column: B3_ac1, rule: below, threshold: 0.0, pi: null}
+  B6: {column: B6_mom, rule: above, threshold: 0.0, pi: null}
+  E1: {column: E1_dfa_std, rule: q_at_or_below, threshold: 0.5, pi: 0.5, under_powered: true}
+  E2: {column: E2_dfa_short, rule: q_at_or_below, threshold: 0.5, pi: 0.5, under_powered: true}
+  E3: {column: E3_av_short, rule: q_at_or_below, threshold: 0.5, pi: 0.5, under_powered: true}
+  E4: {column: E4_h2, rule: q_at_or_below, threshold: 0.5, pi: 0.5, under_powered: true}
+  R1: {column: R1_p, rule: above, threshold: 0.5, pi: null}               # P(high σ at t+1 | <= t) > 0.5
+  R3: {column: R3_e_rl, rule: stable, threshold: 21, p_recent_max: 0.2, pi: null}  # E[run] > 21, P(r <= 5) < 0.2
+  R2_refit63: {column: R2_refit63_p, rule: above, threshold: 0.5, pi: null}
+  R2_fit756: {column: R2_fit756_p, rule: above, threshold: 0.5, pi: null}
+  R2_fit1512: {column: R2_fit1512_p, rule: above, threshold: 0.5, pi: null}
+incremental:
+  baselines: [B1, B4]
+  gates: [B5, E1, E2, E3, E4, R1, R2, R3]
+state_configuration:       # frozen in U8 (features/state.py REGISTERED)
   trailing_quantile_window: 504
-regime_configuration:
+  estimators:
+  - {label: E1, column: E1_dfa_std, estimator: "DFA-1 standard [10, 126]", window: 504, sd_at_window: 0.0656,
+     status: under-powered}
+  - {label: E2, column: E2_dfa_short, estimator: "DFA-1 short [4, 32]", window: 504, sd_at_window: 0.0442,
+     status: under-powered}
+  - {label: E3, column: E3_av_short, estimator: Abry–Veitch short j 1–4, window: 512, sd_at_window: 0.0531,
+     status: under-powered}
+  - {label: E4, column: E4_h2, estimator: "MF-DFA h(2), standard [10, 126], q −5 … 5", window: 1008,
+     sd_at_window: 0.0489, status: under-powered}
+  baselines:
+  - {label: B1, column: B1_vol, definition: σ̂ of returns over 21}
+  - {label: B2, column: B2_vix, definition: VIX as of the decision}
+  - {label: B3, column: B3_ac1, definition: lag-1 autocorrelation over 63}
+  - {label: B4, column: B4_phi, definition: AR(1) φ of d*_t over 126}
+  - {label: B5, column: B5_vr5, definition: VR(5) over 252}
+  - {label: B6, column: B6_mom, definition: region net P&L over 63}
+  b4_random_walk_phi: {window: 126, mean: 0.7078532497242757, sd: 0.05397054295732081, q05: 0.6127894580411913,
+                       q95: 0.7884755657141984}
+regime_configuration:      # frozen in U9 (regime/hmm.py, regime/bocpd.py)
+  std_window: 252          # R1 / R3 input: returns / trailing-252 σ (t−252 … t−1)
   R1:
     model: 2-state Gaussian HMM (switching mean, variance)
-    input: returns / trailing-252 σ (t−252…t−1)
     fit_window: 1008
     refit_every: 21
     order: by σ; regime 1 = high σ
     output: one-step-ahead P(high-σ at t+1 | ≤ t)
-    favourable: P > 0.5
-    pi: reported, not fixed (arbitrary when a refit is degenerate)
   R2:
     model: MS-AR(1), intercept form (switching c, φ, σ²)
-    input: d*_t (§8.1, n = 5)
+    n: 5                   # d*_t anchor (§8.1)
     fit_window: 1008
     refit_every: 21
     order: by φ; regime 0 = smaller φ = fast reversion
     swap_flag: '|φ₁ − φ₀| < 0.05'
     output: one-step-ahead P(fast at t+1 | ≤ t)
-    favourable: P > 0.5
-    pi: reported, not fixed
-    random_walk_phi_126:
-      window: 126
-      mean: 0.7059145678476755
-      sd: 0.05480026751628675
-      q05: 0.6092228482163446
-      q95: 0.7891915044010612
-    random_walk_r2_phi_pairs:
-    - - 0.6331231890207236
-      - 0.6531226009680899
-    - - 0.6133111299707203
-      - 0.7485606473918466
-    - - 0.39071503307121913
-      - 0.7619017214381908
-    - - 0.6458285012219483
-      - 0.6949883121899287
-    - - 0.6006816905034809
-      - 0.6788892823837224
-    - - 0.6511363209803301
-      - 0.6788653053722058
+    random_walk_phi_126: {window: 126, mean: 0.7059145678476755, sd: 0.05480026751628675, q05: 0.6092228482163446,
+                          q95: 0.7891915044010612}
+    random_walk_r2_phi_pairs: [[0.6331231890207236, 0.6531226009680899], [0.6133111299707203, 0.7485606473918466],
+                               [0.39071503307121913, 0.7619017214381908], [0.6458285012219483, 0.6949883121899287],
+                               [0.6006816905034809, 0.6788892823837224], [0.6511363209803301, 0.6788653053722058]]
+  R2_variants:             # §7 U10 hyper-parameter sensitivity: refit cadence {21, 63}, EM window {756, 1,512}
+    R2_refit63: {fit_window: 1008, refit_every: 63}
+    R2_fit756: {fit_window: 756, refit_every: 21}
+    R2_fit1512: {fit_window: 1512, refit_every: 21}
   R3:
     model: BOCPD, Normal–Inverse-Gamma
-    input: returns / trailing-252 σ
-    hazards:
-    - 63
-    - 126
-    - 252
+    hazards: [63, 126, 252]
     hazard_averaging: equal-weight average of the outputs of one run per λ
-    prior:
-      mu0: 0.03940936058138535
-      kappa0: 1.0
-      alpha0: 3.0
-      beta0: 2.362069868704949
-      source: SPY diag 1993-2011
+    prior: {mu0: 0.03940936058138535, kappa0: 1.0, alpha0: 3.0, beta0: 2.362069868704949}
+    prior_source: SPY diag 1993-2011 (U9, one diag look)
     prune: log-prob < max − 10
-    favourable: E[run length] > 21 and P(r_t ≤ 5) < 0.2
-    pi: reported, not fixed
-  R4: 'optional, not built (§7 U9: only if time remains after R1–R3)'
-  no_gate_before_first_fit: NaN (counted by U10, never filled)
-headlines:
-- B1
-- B4
-- B5
-- R2
-headline_note: 'B5 (VR(5) over 252, favourable < 1) replaces E2 (U8: under-powered);
-  E1-E4 are variants labelled under-powered'
+  R4: 'optional, not built (§7 U9)'
+  no_gate_before_first_fit: NaN (counted, never filled)
+not_in_budget: >
+  §7 U10's other sensitivity axes are not run: R1 at refit 63 / EM 756 / 1,512 (R1 is a variant, and U9 found it no
+  better than B1), R3 single-λ sets, and κ (an H4 parameter, U11). Budget 12 is spent on the §6.4 table (9) and the
+  headline regime model R2 (3).
