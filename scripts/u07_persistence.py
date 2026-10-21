@@ -322,7 +322,7 @@ def main(argv=None) -> int:
          f"{x.index[0].date()} → {x.index[-1].date()}, n {len(x)}"
          f"{'; rebuilt and equal to its H1 ledger row (and QQQ, IWM, DIA to theirs) to 1e-9 bp/day' if rows else ''}. "
          f"`diag` stream: R₀ on SPY {dg.index[0].date()} → {dg.index[-1].date()} (n {len(dg)}), `next_open`, gross "
-         f"and at the historical cost schedule (one tick / close, $1/16 to 2001-04-09 then $0.01, floor 1.0 bp; "
+         f"and at the historical cost schedule (one tick / previous close, $1/16 to 2001-04-09 then $0.01, floor 1.0 bp; "
          f"mean {sched.mean():.1f} bp, {sched.iloc[0]:.1f} bp at the start, no fees; an assumption, stated in "
          f"`experiments/persistence.py`). No conditional table uses `diag` (H3's test sample under the §6.2 "
          f"routing). Intervals: two-sided 90 % block bootstrap (block 21, 5,000, seed 0)."), "",
