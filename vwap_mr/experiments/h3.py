@@ -46,12 +46,12 @@ from vwap_mr.experiments.ledger import Ledger, clean
 from vwap_mr.experiments.looks import LOOKS_PATH, check_window, looks, looks_total, record_look
 from vwap_mr.experiments.report import ReportRefused, _f, _p, _table
 from vwap_mr.experiments.runner import CELLS_DIR, LEDGER_PATH, RunError, _hash, _rel
-from vwap_mr.experiments.spec import Spec, SpecError, check_clean, code_hash, load_spec, registered_sha
+from vwap_mr.experiments.spec import Spec, SpecError, _num, check_clean, code_hash, load_spec, registered_sha
 from vwap_mr.features.state import REGISTERED, StateConfig, state_frame
 from vwap_mr.stats.bootstrap import cond_mean_test, newey_west_ols, sharpe_test
 from vwap_mr.stats.multiplicity import holm
 from vwap_mr.stats.power import mde_cond_diff
-from vwap_mr.strategies.gates import Gated, gate_frame, regime_frame
+from vwap_mr.strategies.gates import RULES, Gated, gate_frame, regime_frame
 from vwap_mr.strategies.vwap_mr import r0
 
 H1_SPEC = SPECS_DIR / "H1_vwap_mr.yaml"
@@ -115,6 +115,20 @@ def _validate_h3(spec: Spec) -> None:
     for k in ("state_configuration", "regime_configuration", "incremental"):
         if k not in spec.data:
             raise SpecError(f"an H3 spec needs `{k}`")
+    for n in names:
+        g = gates[n]
+        if g.get("rule") not in RULES or not isinstance(g.get("column"), str) or not _num(g.get("threshold")):
+            raise SpecError(f"gate {n}: needs a column, a threshold and a rule in {RULES}")
+        if g["rule"] == "stable" and not _num(g.get("p_recent_max")):
+            raise SpecError(f"gate {n}: the stable rule needs p_recent_max")
+
+
+def _check_windows(spec: Spec, cfg: StateConfig) -> None:
+    """The spec's estimator windows are the code's (`features.state.REGISTERED`): the spec describes, the code runs."""
+    want = {"E1": cfg.dfa, "E2": cfg.dfa, "E3": cfg.av, "E4": cfg.mf}
+    got = {e["label"]: e["window"] for e in spec["state_configuration"]["estimators"]}
+    if got != want:
+        raise SpecError(f"spec estimator windows {got} differ from the code's {want}")
 
 
 def run_h3(
@@ -127,6 +141,8 @@ def run_h3(
     if spec["test"]["kind"] != "cond_mean_diff":
         raise SpecError(f"run_h3 runs cond_mean_diff specs, not {spec['test']['kind']}")
     _validate_h3(spec)
+    if state_cfg == REGISTERED:
+        _check_windows(spec, state_cfg)
     if not require_registered and {Path(ledger_path), Path(looks_path), Path(cells_dir)} & {
         LEDGER_PATH, LOOKS_PATH, CELLS_DIR}:  # fmt: skip
         raise RunError(
@@ -155,8 +171,9 @@ def run_h3(
             from vwap_mr.data.store import verify_vintage, vintage_dir
 
             dh = verify_vintage(vintage_dir(spec["vintage"])) if require_registered else "synthetic"
+            dh_diag = verify_vintage(vintage_dir("diag")) if require_registered else "synthetic"
         else:
-            dh = data_hash(spec["vintage"])
+            dh, dh_diag = data_hash(spec["vintage"]), data_hash("diag")
         look = record_look(f"U10 run {spec.id}@{spec_sha[:12]}", len(names),
                            f"{spec.id}: {len(heads)} headline gates (Holm), {len(variants)} variant gates",
                            looks_path, window="dev")  # fmt: skip
@@ -195,8 +212,8 @@ def run_h3(
                 rec |= {"status": "no_fit", "error": str(e), "p": None, "pi": float(gi[ok].mean()) if ok.any()
                         else None}  # fmt: skip
             pi_reg = gs.get("pi")
-            mde = mde_cond_diff(max(int(ok.sum()), 2), sd_r if sd_r > 0 else pw["sigma_d_bp"] / 1e4,
-                                pi_reg if isinstance(pi_reg, float) else 0.5, k=len(heads) if is_head else 1)  # fmt: skip
+            mde = mde_cond_diff(max(int(ok.sum()), 2), pw["sigma_d_bp"] / 1e4, pi_reg if isinstance(pi_reg, float)
+                                else 0.5, k=len(heads) if is_head else 1)  # fmt: skip
             rec["mde_bp_day"] = mde["mde_bp_day"]
             rec["floors"] = {
                 "in_gate_mean": rec.get("mu_in_bp_day") is not None and rec["mu_in_bp_day"] > fl["in_gate_mean_min"],
@@ -208,7 +225,9 @@ def run_h3(
             s = summary(gated)
             rec["gated"] = {k: s[k] for k in ("mean_bp_day", "ret_ann", "vol_ann", "sharpe", "max_dd",
                                               "round_trips_yr", "flat_share", "cost_bp_day")}  # fmt: skip
-            if np.array_equal(gx.to_numpy(), r.to_numpy()):
+            if not gated.ledger["exp_close"].ne(0).any():
+                rec["gated"] |= {"sharpe": None, "d_sharpe_note": "never on: the gated stream is flat (cash)"}
+            elif np.array_equal(gx.to_numpy(), r.to_numpy()):
                 rec["gated"]["d_sharpe_note"] = "identical to the ungated stream (gate always on)"
             elif gx.std() > 0:
                 st = sharpe_test(gx.to_numpy(), r.to_numpy(), **kw)
@@ -257,7 +276,7 @@ def run_h3(
         holds = heads and all(out[h]["passes"] for h in heads)
         record = clean({
             "spec_id": spec.id, "spec_path": _rel(spec.path, repo), "spec_sha": spec_sha, "git_sha": git_sha,
-            "code_hash": ch, "data_hash": dh, "vintage": spec["vintage"],
+            "code_hash": ch, "data_hash": dh, "data_hash_diag": dh_diag, "vintage": spec["vintage"],
             "spec": json.loads(json.dumps(spec.data, default=str)), "look": look, "k_at_look": looks_total(looks_path),
             "ungated": summary(base) | {"n_obs": len(r)}, "gates": out, "incremental": inc, "refits": refits,
             "n_pass": sum(out[h]["passes"] for h in heads), "all_pass": holds,
@@ -322,7 +341,8 @@ def render_h3(record: dict, looks_path: Path = LOOKS_PATH) -> str:
            f"{spec['floors']['pi_tolerance']} of its registered value where one is registered). Ungated R₀: "
            f"{_f(u['mean_bp_day'], 2, True)} bp/day net excess over {u['n_obs']} sessions. Return row t is "
            "conditioned on the gate at decision t − 1; MDE at the registered π (0.5 where π is only reported; Holm "
-           f"k = {len(heads)} for headlines), with the ungated stream's σ."), ""]  # fmt: skip
+           f"k = {len(heads)} for headlines) and the registered σ_d {spec['power']['sigma_d_bp']} bp, on the gate's n; "
+           f"registered lines {spec['power']['mde_by_headline']}."), ""]  # fmt: skip
     untest = [h for h in heads if g[h]["untestable"]]
     if untest:
         L += [f"Untestable headlines (kept at p = 1 in the Holm step): {', '.join(untest)}.", ""]
@@ -342,7 +362,10 @@ def render_h3(record: dict, looks_path: Path = LOOKS_PATH) -> str:
                    _f(o["gated"]["flat_share"], 3)] for n, o in g.items()]), "",
           (f"Ungated: Sharpe {_f(u['sharpe'])}, {_f(u['ret_ann'] * 100, 2, True)} %/yr, vol "
            f"{_f(u['vol_ann'] * 100, 1)} %/yr. A gate with no information on a share π of sessions has Sharpe ≈ √π × "
-           "the ungated one (§6.4), so ΔSharpe < 0 is the null's expectation, not a finding."), ""]  # fmt: skip
+           "the ungated one (§6.4), so ΔSharpe < 0 is the null's expectation, not a finding. The gated stream holds "
+           "row t's overnight leg on the gate at t − 2 (it was decided then) while Δμ credits gate t − 1 with all of "
+           "row t: the two differ at gate transitions, so an effect in the overnight leg can show in Δμ and less "
+           "here."), ""]  # fmt: skip
     inc = spec["incremental"]
     L += [f"## 4. Incremental value given {' + '.join(inc['baselines'])} (Newey–West, 5 lags)", "",
           _table(["gate", "n", "β bp/day", "t NW"], [[i["gate"], i["n"], _f(i.get("beta_bp_day"), sign=True),

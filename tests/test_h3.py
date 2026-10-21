@@ -277,3 +277,28 @@ def test_refit_summary_keeps_the_refit_covering_the_window_start():
         out["refits"] == 2 and out["degenerate"] == 1 and out["swap_flag"] == 1 and out["not_converged"] == 1
     )
     assert out["skipped"] == 1 and out["sep_median"] == pytest.approx((0.5 + 0.02) / 2)
+
+
+def test_never_on_gate_reports_no_economic_numbers(tmp_path):
+    rec = dry(tmp_path, fast_spec(tmp_path, B5={"threshold": -100.0}))
+    g = rec["gates"]["B5"]
+    assert g["status"] == "no_fit" and g["gated"]["flat_share"] == 1.0
+    assert (
+        g["gated"]["sharpe"] is None
+        and "d_sharpe_ann" not in g["gated"]
+        and "never on" in g["gated"]["d_sharpe_note"]
+    )
+
+
+def test_validator_refuses_unknown_rule_before_the_look_and_binds_estimator_windows(tmp_path):
+    d = spec_dict()
+    d["gates"]["B1"]["rule"] = "between"
+    p = tmp_path / "H3_regime_gates.yaml"
+    p.write_text(yaml.safe_dump(d, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(SpecError, match="rule"):
+        dry(tmp_path, p)
+    assert not (tmp_path / "looks.jsonl").exists()
+    s = load_spec(SPEC)
+    h3._check_windows(s, h3.REGISTERED)
+    with pytest.raises(SpecError, match="estimator windows"):
+        h3._check_windows(s, replace(h3.REGISTERED, mf=504))
