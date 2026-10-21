@@ -757,7 +757,9 @@ windows we could use, and freeze the registered configurations before any market
 **Reviewer focus.** DFA on returns vs on the profile (α vs α + 1); the short-scale set's lower bound (s = 4 is
 noisy); overlapping-estimate autocorrelation; the trailing-median window (504) for every "below median" set.
 
-**Cost.** 1½ sessions. **Depends on.** U0 (synthetic), U1 (market), U6 for B6. **Status.** not started.
+**Cost.** 1½ sessions. **Depends on.** U0 (synthetic), U1 (market), U6 for B6. **Status.** done on
+`unit/08-estimators` (9802a06), not merged; 3/3 done-when; **E1–E4 under-powered** (SD > 0.025 at every window ≤ 1,008);
+`results/reports/U08_estimators.md`, `U08_status.md`.
 
 ---
 
@@ -1002,7 +1004,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U5 | reproduce and diagnose | done, merged | K = 112 (every window; 48 dev rows); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
 | U6 | H1 existence | done, merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
 | U7 | H2 persistence | done, merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
-| U8 | state estimators + noise study | not started | |
+| U8 | state estimators + noise study | done, not merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
 | U9 | regime models + detection study | not started | |
 | U10 | H3 predictability | not started | |
 | U11 | H4 blend | not started | |
@@ -1018,6 +1020,27 @@ accesses = 0.
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-21 — U8 state estimators and noise study. Branch `unit/08-estimators` @ 9802a06. Done-when: 3/3 ticked
+  (`results/reports/U08_status.md`, report `U08_estimators.md`, draft `specs/H3_regime_gates.yaml`).
+  - Looks: K was 153, is 153 (synthetic).
+  - Reviewer: BREAKING 0 / SEVERE 0 / MINOR 7 (fixed 7).
+  - Finding: no DFA, MF-DFA, Abry–Veitch or R/S estimator meets SD ≤ 0.025 at any window ≤ 1,008, under fGn,
+    Gaussian ARFIMA or t₄ ARFIMA. The best two need 2,016 sessions; in H units, only on fGn. E1–E4 are frozen at
+    their §6.4 windows as **variants labelled under-powered**.
+  - Rolling estimates give 3.4–7.6 independent readings per decade.
+  - Fat tails alone give Δα ≈ 0.36.
+  - B4's random-walk φ is 0.71.
+  - Decisions inside the unit:
+    - the noise study adds a Gaussian ARFIMA (separates structure from tails);
+    - SD in H units is reported beside the raw-SD rule (rule unchanged);
+    - E3's window counts returns reached (coefficients fully inside), not coefficients;
+    - pre-2015 VIX is read at 13:00 (previous close; no calendar there).
+  - Open questions:
+    - **E2 in §6.4's headline program is under-powered by the U8 rule.** Amend (replace or drop) or keep the
+      routing (H3 = B1 on `diag`).
+    - merge `unit/08-estimators`.
+  - Next: U9, stacked on `unit/08-estimators`.
 
 - **2026-10-21 — U7 merge and ruling (user).** `unit/07-persistence` merged into `dev` (71a227f).
   - **U8 and U9 are built as planned**, not cut to a B1-only "U10-lite". The user's reason: the estimators and
