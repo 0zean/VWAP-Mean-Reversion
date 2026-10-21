@@ -669,7 +669,8 @@ the Alpaca development window** (that is U6's one test). Output `results/reports
 **Reviewer focus.** Any Alpaca 2016–2025 strategy P&L beyond the single inherited cell; the Yahoo adjustment
 emulation; the `same_close` mode leaking into non-diagnostic runs.
 
-**Cost.** 1 session. **Depends on.** U1, U3, U4. **Status.** not started.
+**Cost.** 1 session. **Depends on.** U1, U3, U4. **Status.** done on `unit/05-diagnose` @ 4025902, awaiting merge;
+3/3 done-when; K 1 → 48; `results/reports/U05_diagnosis.md`, `U05_status.md`.
 
 ---
 
@@ -993,7 +994,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U2 | live plumbing smoke | not started | |
 | U3 | backtest, costs, account; SPEC §1–§5 | done, merged | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
 | U4 | statistics toolkit; SPEC §6 | done, merged | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman criterion amended (crossing-lag median 262 on the causal track) |
-| U5 | reproduce and diagnose | not started | K = |
+| U5 | reproduce and diagnose | done, awaiting merge | K = 48 (all windows 112); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
 | U6 | H1 existence | not started | |
 | U7 | H2 persistence | not started | P(μ_T > 0) = |
 | U8 | state estimators + noise study | not started | |
@@ -1005,11 +1006,38 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U14 | intraday session-VWAP family | gated | |
 | U15 | ML conditioning overlay | gated | |
 
-Looks ledger K = 1 (seeded, §7 U0). Trials counted = 0. Holdout accesses = 0.
+Looks ledger K = 48 on the development window (1 seed + 47 from U5); 112 counting `diag`-only looks (window split
+proposed in §11, U5). Trials counted = 0. Holdout accesses = 0.
 
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-21 — U5 reproduce and diagnose. Branch `unit/05-diagnose` @ 4025902. Done-when: 3/3 ticked
+  (`results/reports/U05_status.md`, report `U05_diagnosis.md`).
+  - Looks: K was 1, is 48 (dev); 112 with `diag`-only looks. That includes one aborted-run row and two post-review
+    rows.
+  - Reviewer: BREAKING 0 / SEVERE 0 / MINOR 7 (fixed 7).
+  - Findings:
+    - The README figure reproduces (0.476 / 0.318 on Yahoo 2007-01-03 → 2023-01-06). Its edge over SPY is
+      ΔSharpe +0.14, p 0.64.
+    - The edge comes from 2007–09.
+    - On `diag`, R₀ earns +2.3 bp/day net at 1.0 bp, but 0.7–1.4 outside 2007–09.
+    - The MDE is 4.6 bp/day.
+  - Open questions: the look-window proposal below; whether U6 registers H1 as a diagnostic (recommended);
+    whether the counted missing-cross fallback moves into `load_long` (needed by U8 warm-up).
+  - Next: merge `unit/05-diagnose`; U6 (needs §9.2, default `next_open`). R₀'s cell code (`strategies/vwap_mr.py`)
+    already exists from U5.
+- **2026-10-21 — U5 proposal (applied in code, needs the user's ruling): look windows.**
+  - The change: each look row carries `window: "dev" | "diag"`, and K (`looks_total`) counts dev rows only. A row
+    without the field counts as dev.
+  - Why: the Bonferroni bound p·K guards development-window tests. `diag`-only looks (1993–2015) never touch that
+    window, and counting them would put 64 more configurations into H1's p·K.
+  - Counting rule: n = the configurations read (strategy cell × execution, or statistic × instrument × window).
+    Years, sub-periods, cost levels and legs are splits of one look.
+  - Alternatives: count every window in K (112), or count reversal statistics per symbol rather than per statistic
+    (dev K would be 1 + 2 + 4 = 7).
+  - A row-range check on the window label belongs with U6's runner.
 
 - 2026-10-20 — U4 statistics toolkit; SPEC.md §6. Branch `unit/04-stats` @ c043a47. Done-when: 1 of 3 ticked, 1 met
   within Monte Carlo error, 1 partly met (`results/reports/U04_status.md`, raw output `U04_checks.md`).
