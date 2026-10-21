@@ -17,7 +17,11 @@ Contract:
 - the raw download is cached under `data/cache/diag/yahoo/<SYMBOL>` (store.py sidecar), fetched with
   `period2 = HOLDOUT_START`, so no holdout row is ever downloaded.
 - `close_split` is the split-adjusted, not dividend-adjusted close (Yahoo before DEV_START, the raw closing cross
-  after; U5 emulates `VWAP.R` with it). Pre-2016 dividends are Yahoo's alone (not cross-checked; diag only)."""
+  after; U5 emulates `VWAP.R` with it). Pre-2016 dividends are Yahoo's alone (not cross-checked; diag only).
+- a session from DEV_START whose opening or closing cross is missing gets the same counted fallback as the engine's
+  `load_market` (`bars.rth_fallback`: first / last RTH 5Min print, × the session's factor for `open` / `close`), so
+  warm-up never meets a NaN print; each use is printed and listed in the report's `fallback_sessions`, and a
+  session without RTH bars raises."""
 
 import json
 from collections.abc import Callable
@@ -29,7 +33,7 @@ import pandas as pd
 
 from vwap_mr.config import CACHE_DIR, DEV_START, HOLDOUT_START
 from vwap_mr.data.alpaca import NY_TZ, midnight, ts
-from vwap_mr.data.bars import load_bars
+from vwap_mr.data.bars import load_bars, rth_fallback
 from vwap_mr.data.exo import http_get
 from vwap_mr.data.store import MANIFEST, FrozenVintageError, load_frame, save_frame, vintage_dir
 
@@ -163,25 +167,66 @@ def splice(raw: pd.DataFrame, auction: pd.DataFrame) -> tuple[pd.DataFrame, dict
     return out, report
 
 
+def fill_missing_prints(
+    tail: pd.DataFrame, auction: pd.DataFrame, fb: pd.DataFrame
+) -> tuple[pd.DataFrame, dict]:
+    """Replace the NaN prints of `tail` (open, close, close_split from `auction`) by the RTH fallback `fb`
+    (`rth_fallback` columns): open = open_fallback_raw × factor, close = close_fallback_raw × factor, close_split =
+    close_fallback_raw. Returns the filled frame and {date: "open" | "close" | "open+close"}; a needed fallback
+    that is itself NaN raises."""
+    out, used = tail.copy(), {}
+    for side in ("open", "close"):
+        miss = auction[f"{side}_raw"].isna()
+        if not miss.any():
+            continue
+        days = auction.index[miss.to_numpy()]
+        px = fb[f"{side}_fallback_raw"].reindex(days)
+        if px.isna().any():
+            bad = [str(d.date()) for d in days[px.isna().to_numpy()]]
+            raise DiagDataError(f"no {side} cross and no RTH 5Min bars for sessions {bad}")
+        out.loc[days, side] = px.to_numpy() * auction.loc[days, "factor"].to_numpy()
+        if side == "close":
+            out.loc[days, "close_split"] = px.to_numpy()
+        for d in days:
+            key = str(d.date())
+            used[key] = f"{used[key]}+{side}" if key in used else side
+    return out, dict(sorted(used.items()))
+
+
 def load_spy_long(vintage: str, *, cache_root: Path = CACHE_DIR, http: Callable[..., str] = http_get):
-    """SPY daily from 1993-01-29 to HOLDOUT_START: diag (spliced) before DEV_START; from DEV_START the adjusted
-    `1DayAuction` open / close, `close_split` = raw closing cross, and `1DayPrint` volume.
+    """`load_long("SPY", ...)`: SPY from 1993-01-29."""
+    return load_long("SPY", vintage, cache_root=cache_root, http=http)
+
+
+def load_long(
+    symbol: str, vintage: str, *, cache_root: Path = CACHE_DIR, http: Callable[..., str] = http_get
+):
+    """`symbol` daily from its first Yahoo session to HOLDOUT_START: diag (spliced) before DEV_START; from DEV_START
+    the adjusted `1DayAuction` open / close, `close_split` = raw closing cross, and `1DayPrint` volume.
 
     For diagnostics and estimator warm-up only: the frame is tagged diag as a whole (`refuse_diag` refuses it) and
     row-wise (`is_diag`). Returns (frame, splice report)."""
     auction = load_bars(
-        "SPY", "1DayAuction", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root
+        symbol, "1DayAuction", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root
     )
-    volume = load_bars("SPY", "1DayPrint", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root)[
+    volume = load_bars(symbol, "1DayPrint", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root)[
         "volume"
     ]
-    raw = load_yahoo("SPY", cache_root=cache_root, http=http)
+    raw = load_yahoo(symbol, cache_root=cache_root, http=http)
     diag, report = splice(raw, auction)
     report["volume_ratio_print_vs_yahoo_median"] = float(
         (volume / raw["volume"].reindex(volume.index)).median()
     )
     tail = pd.DataFrame({"open": auction["open"], "close": auction["close"], "close_split": auction["close_raw"],
                          "volume": volume.reindex(auction.index), "is_diag": False})  # fmt: skip
+    gaps = auction.index[(auction["open_raw"].isna() | auction["close_raw"].isna()).to_numpy()]
+    fb = rth_fallback(symbol, gaps, vintage=vintage, cache_root=cache_root) if len(gaps) else pd.DataFrame()
+    tail, used = fill_missing_prints(tail, auction, fb)
+    report["fallback_sessions"] = used
+    for day, side in used.items():
+        print(
+            f"[DIAG] {symbol} {day}: {side} cross missing; RTH 5Min fallback (counted in fallback_sessions)"
+        )
     out = pd.concat([diag, tail])
     if out.index.has_duplicates or not out.index.is_monotonic_increasing:
         raise SpliceError("spliced index is not sorted and unique")

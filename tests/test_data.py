@@ -839,3 +839,27 @@ def test_fixture_quarter_is_consistent(cal):
     tr = ((daily["close_raw"] + daily["dividend"]) / daily["close_raw"].shift() - 1).iloc[1:]
     np.testing.assert_allclose(r, tr, rtol=0, atol=1e-12)
     assert (daily["volume"] > daily["close_size"]).all() and (daily["dividend"] > 0).sum() == 1
+
+
+def test_fill_missing_prints_uses_the_counted_rth_fallback():
+    """load_long (U5 follow-up): a missing cross from 2016 gets the RTH 5Min print × the session factor; close_split
+    gets the raw fallback close; each use is listed; a needed fallback that is NaN raises."""
+    idx = pd.bdate_range("2019-08-08", periods=4).tz_localize("America/New_York")
+    auction = pd.DataFrame({"open_raw": [100.0, np.nan, 102.0, 103.0], "close_raw": [101.0, 101.5, np.nan, 104.0],
+                            "factor": [0.9, 0.9, 0.95, 0.95]}, index=idx)  # fmt: skip
+    auction["open"] = auction["open_raw"] * auction["factor"]
+    auction["close"] = auction["close_raw"] * auction["factor"]
+    tail = pd.DataFrame({"open": auction["open"], "close": auction["close"], "close_split": auction["close_raw"],
+                         "volume": 1e6, "is_diag": False})  # fmt: skip
+    fb = pd.DataFrame({"open_fallback_raw": [np.nan, 100.5, 101.9, np.nan],
+                       "close_fallback_raw": [np.nan, 101.4, 102.7, np.nan]}, index=idx)  # fmt: skip
+    out, used = secondary.fill_missing_prints(tail, auction, fb)
+    assert used == {"2019-08-09": "open", "2019-08-12": "close"}
+    assert out.loc[idx[1], "open"] == pytest.approx(100.5 * 0.9)
+    assert out.loc[idx[2], "close"] == pytest.approx(102.7 * 0.95)
+    assert out.loc[idx[2], "close_split"] == 102.7
+    assert not out[["open", "close", "close_split"]].isna().any(axis=None)
+    pd.testing.assert_frame_equal(out.drop(idx[1:3]), tail.drop(idx[1:3]))
+    fb.loc[idx[2], "close_fallback_raw"] = np.nan
+    with pytest.raises(secondary.DiagDataError, match="2019-08-12"):
+        secondary.fill_missing_prints(tail, auction, fb)

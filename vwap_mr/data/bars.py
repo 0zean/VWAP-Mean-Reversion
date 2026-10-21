@@ -498,3 +498,27 @@ def load_bars(
     if timeframe == "snap1545":
         return snapshot(out, calendar)
     return out
+
+
+def rth_fallback(symbol: str, days, *, vintage: str, **kw) -> pd.DataFrame:
+    """The counted fallback for sessions whose auction cross is missing (U3, SPEC.md §1; shared by `load_market` and
+    `secondary.load_long`): per session in `days`, the first RTH 5Min open, the last RTH 5Min close (raw dollars)
+    and the instant that last bar ended. Read from the raw 5Min of the session itself, not 1DayRTH, which drops a
+    session whose last bar is missing, exactly when a cross can be missing too (2019-08-12: no SIP trades
+    15:35-16:00 for SPY / IWM / DIA). A session without any RTH bar keeps NaN; the caller raises or counts it."""
+    idx = pd.DatetimeIndex(days)
+    out = pd.DataFrame({"open_fallback_raw": np.nan, "close_fallback_raw": np.nan}, index=idx)
+    out["close_fallback_end"] = pd.Series(pd.NaT, index=idx, dtype=f"datetime64[ns, {NY_TZ}]")
+    for d in idx:
+        day = d.tz_localize(None) if d.tz is not None else d
+        bars = load_bars(
+            symbol, "5Min", day, day + pd.Timedelta(days=1), vintage=vintage, adjustment="raw", **kw
+        )
+        if bars.empty:
+            continue
+        out.loc[d, ["open_fallback_raw", "close_fallback_raw"]] = [
+            bars["open"].iloc[0],
+            bars["close"].iloc[-1],
+        ]
+        out.loc[d, "close_fallback_end"] = bars.index[-1] + pd.Timedelta(minutes=5)
+    return out
