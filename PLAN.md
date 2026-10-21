@@ -825,7 +825,8 @@ sets, κ-free; ≤ 12 variants; MDE line per headline at its π); the incrementa
 t+1 (not the filtered P(s_t)); B6 at a `t1545` decision would read an incomplete session (it is defined on
 completed sessions only).
 
-**Cost.** 1 session. **Depends on.** U6, U8, U9. **Status.** not started.
+**Cost.** 1 session. **Depends on.** U6, U8, U9. **Status.** done, not merged (`unit/10-h3`); diagnostic null, 0 of 4
+headline gates pass (`results/reports/U10_status.md`).
 
 ---
 
@@ -1011,20 +1012,43 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U7 | H2 persistence | done, merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
 | U8 | state estimators + noise study | done, merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
 | U9 | regime models + detection study | done, merged | synthetic: R2 Youden J 0.63–0.67 vs B4 0.30–0.53, but 40 % 'fast' calls on a no-regime null; R1 J ≈ B1; R3 catches 21 % of σ doublings, ~0 false alarms; decision < 1 ms, refit 0.2 s / 21 sessions; 252 tests |
-| U10 | H3 predictability | not started | |
+| U10 | H3 predictability | done, not merged | **diagnostic null, 0 of 4 headline gates pass** (Holm): B1 Δμ +2.86 bp/day p 0.19 (Holm 0.74), π 0.398/0.40, 42 episodes; B4 −2.28 p 0.78, π 0.519/0.50, 47; B5 −9.71 p 0.97, π 0.893 (rep.), 25; R2 +2.65 p 0.19 (Holm 0.74), π 0.458 (rep.), 85; every p·K 1.0; MDE ≈ 11.4–11.6; R2 φ separation 0.028, 103/121 refits swap-flagged (variance regimes, not φ); 269 tests |
 | U11 | H4 blend | not started | |
 | U12 | holdout read, verdict, registry | not started | |
 | U13 | forward test | not started | |
 | U14 | intraday session-VWAP family | gated | |
 | U15 | ML conditioning overlay | gated | |
 
-Looks ledger K = 154, every window counted (§11 ruling 2026-10-21): 87 development-window (1 seed + 47 from U5 + 27
-from U6's H1 run + 12 from U7) and 67 `diag`-only (+1 from U9's NIG prior). Trials counted = 27 (H1: 1 headline, 7 variants, 19 splits). Holdout
+Looks ledger K = 170, every window counted (§11 ruling 2026-10-21): 103 development-window (1 seed + 47 from U5 + 27
+from U6's H1 run + 12 from U7 + 16 from U10's H3 run) and 67 `diag`-only (+1 from U9's NIG prior). Trials counted = 43 (H1: 1 headline, 7 variants, 19 splits; H3: 4 headlines, 12 variants). Holdout
 accesses = 0.
 
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-21 — U10 H3 regime predictability. Branch `unit/10-h3` @ 2e77cfb (spec registered at bd6e887).
+  Done-when: 3/3 ticked (`results/reports/U10_status.md`, report `U10_regimes.md`).
+  - Looks: K was 154, is 170 (one dev row, n 16). Trials: 43 ledger rows (16 new).
+  - Reviewer (run before the registered run): BREAKING 0 / SEVERE 0 / MINOR 6 (fixed 6).
+  - **Verdict: diagnostic null, 0 of 4 headline gates pass** (Holm over B1, B4, B5, R2; smallest Holm p 0.74).
+    - B1 (high vol): Δμ +2.86 bp/day (p 0.19). This is the expected 3 bp/day, at a quarter of the MDE.
+    - B4 −2.28, B5 −9.71 (VR(5) < 1 on 89 % of sessions), R2 +2.65.
+    - No variant has an incremental t beyond ±1.5 given B1 + B4.
+  - **R2 on SPY d*:** the two φs are 0.648 / 0.677 (separation 0.028), 103 of 121 refits are swap-flagged, and 0
+    are degenerate. These are variance regimes with nearly equal φ, so the "fast" label is close to arbitrary.
+  - Decisions inside the unit:
+    - Δμ conditions return row t on gate t − 1;
+    - variants: the nine §6.4 rows plus R2 at refit 63, EM 756 and EM 1,512;
+    - MDE uses the registered σ_d of 92.4 bp, at π = 0.5 where π is only reported;
+    - an untestable headline stays in Holm at p = 1;
+    - the harness is now 5,407 non-blank lines (target 5,000).
+  - Open questions:
+    - merge `unit/10-h3`;
+    - **H4's blend weight:** R2's P(fast) does not measure reversion speed on this window. Run H4 as amended,
+      amend the weight (e.g. B1 or R1), or skip to U12;
+    - U2 / U13 under a program-level null.
+  - Next: U11, after the H4 weight decision.
 
 - **2026-10-21 — U8 / U9 merged; amendment: H3 / H4 routing and H3's headline program (user decisions).**
   - Merges: `unit/08-estimators` into `dev` (567eed8), then `unit/09-regime` (e1b4ea0). The done-gate passes on
