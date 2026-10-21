@@ -867,7 +867,9 @@ configurations: spec SHA, code hash, cell hashes, freeze date, registered expect
 the registered BOCPD run length λ = 126 and the kill rule for U13, the H5 rule); README rewritten with the result.
 (Amended 2026-10-21, §11, user decision: the registry records **the B1-weighted blend (H4 headline, spec
 `H4_blend` @ 798ce87) as a diagnostic candidate** — labelled diagnostic, not adopted on evidence; its holdout slice
-is read in this unit's single batch with the registered configurations.)
+is read in this unit's single batch with the registered configurations. The registry also records **the vol-managed
+buy-and-hold** (`strategies.trend.vol_managed`: min(1, 15 % / σ̂_21), exposure ≤ 1, SPY, close → next_open, 1.0 bp)
+**as the forward reference** every forward configuration is reported against; it is a benchmark, not a candidate.)
 
 **Done when.**
 - [ ] Holdout accessed exactly once by research code (one audit line); the report says what the slice shows and
@@ -1046,7 +1048,10 @@ accesses = 0.
     - U12 still writes the registered expectation and its 90 % interval from the development window, which for
       ΔSharpe is [−0.04, …) one-sided.
     - The forward verdict (H5, §6.7) applies as written.
-    - Whether the vol-managed buy-and-hold is also registered, as the forward reference, is left to U12.
+    - **The vol-managed buy-and-hold is registered as the forward reference** (user decision, same day). It is
+      min(1, 15 % / σ̂_21) on SPY: the H4 benchmark, with Sharpe 0.82 on 2016–2025. U12 writes it into the registry,
+      and U13 reports every forward configuration beside it. It is a benchmark, not a candidate, and it adds no
+      trial.
   - Next: U12, when the user starts it. U2 / U13 still wait on the Alpaca upgrade.
 
 - 2026-10-21 — U11 trend region and H4 blend. Branch `unit/11-h4` @ 798ce87 (spec registered and run at that SHA).
