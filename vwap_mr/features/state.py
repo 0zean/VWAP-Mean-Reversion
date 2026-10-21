@@ -96,8 +96,14 @@ def market_state(market, *, net: pd.Series | None = None, cfg: StateConfig = REG
 def long_state(
     symbol: str, vintage: str, *, net: pd.Series | None = None, cfg: StateConfig = REGISTERED
 ) -> pd.DataFrame:
-    """State on the spliced long series (`load_long`: `diag` before 2016-01-04, Alpaca after), so every window is
-    full on 2016-01-04. VIX timing: on sessions the vintage's exchange calendar covers (2015 on) VIX is read at the
+    """`state_frame` on `long_inputs` (below)."""
+    frame, vix = long_inputs(symbol, vintage)
+    return state_frame(frame, vix=vix, net=net, cfg=cfg)
+
+
+def long_inputs(symbol: str, vintage: str) -> tuple[pd.DataFrame, pd.Series]:
+    """The spliced long series (`load_long`: `diag` before 2016-01-04, Alpaca after) and VIX as of each session's
+    close decision, so every state window is full on 2016-01-04. VIX timing: on sessions the vintage's exchange calendar covers (2015 on) VIX is read at the
     calendar's close-decision instant (early closes respected); before that there is no calendar, so it is read at
     13:00 on the session date, i.e. the previous session's close (one day stale, never a value an early-close
     decision could not have seen). B6 needs the region's net P&L (`net`, the H1 stream: development window only, so
@@ -116,7 +122,7 @@ def long_state(
     when.loc[covered] = decision_times(covered, cal, DecisionTime.CLOSE)
     vix_f = load_series("VIX", naive[0] - pd.Timedelta(days=10), "2026-01-01", vintage=vintage)
     vix = pd.Series(Exo({"VIX": vix_f}).asof("VIX", pd.DatetimeIndex(when.to_numpy())), index=days)
-    return state_frame(frame, vix=vix, net=net, cfg=cfg)
+    return frame, vix
 
 
 SMALL = replace(
