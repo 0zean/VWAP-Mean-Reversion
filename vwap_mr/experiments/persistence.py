@@ -8,8 +8,11 @@ bootstraps (block 21, 5,000 resamples, seed 0, `stats.bootstrap.mean_test`); a p
 gets the Newey–West t only.
 
 **Historical cost schedule (`diag` only; an assumption, stated, not measured).** Spread + slippage per round trip
-is one minimum tick divided by the session's close: $1/16 until 2001-04-09 (the end of the SEC's decimalization
-phase-in for US equity markets), $0.01 after; floored at the registered 1.0 bp. On SPY that is ≈ 14 bp in 1993,
+is one minimum tick divided by the previous close (the cost of row t is booked at t's open): $1/16 until
+2001-04-09 (the end of the SEC's decimalization phase-in for US equity markets), $0.01 after; floored at the
+registered 1.0 bp. Conservative in two places: NYSE / AMEX listings (SPY among them) may have quoted in decimals
+from 2001-01-29 (≈ 48 sessions costed at 1/16 instead), and SPY's quoting increment before the 1997 move from
+eighths to sixteenths is not documented here (1/16 is used throughout). On SPY that is ≈ 14 bp in 1993,
 ≈ 4–5 bp in 1999–2000, and the 1.0 bp floor from 2001. Fees are not charged on `diag` (U5's convention), borrow
 and the T-bill are. With fees off the engine's daily growth is m·(1 − c_t)·after, so the stream at a session-varying
 one-way rate c_t is exactly (1 + net₀)(1 − traded_t·c_t) − 1, with net₀ the zero-spread stream."""
@@ -89,12 +92,13 @@ def cond_table(x: pd.Series, key: pd.Series, labels: dict | None = None) -> list
 
 
 def coherence_by_year(streams: dict[str, pd.Series]) -> list[dict]:
-    """Per year: each instrument's mean bp/day and how many share the sign of the headline (the first stream)."""
+    """Per year: each instrument's mean bp/day and how many of the others share the headline's sign (the first
+    stream; the headline itself is not counted)."""
     df = pd.DataFrame(streams)
     head = df.columns[0]
     out = []
     for y, g in df.groupby(_years(df)):
         m = g.mean() * 1e4
         out.append({"year": int(str(y)), **{c: float(m[c]) for c in df.columns},
-                    "same_sign": int((np.sign(m) == np.sign(m[head])).sum())})  # fmt: skip
+                    "same_sign": int((np.sign(m.drop(head)) == np.sign(m[head])).sum())})  # fmt: skip
     return out

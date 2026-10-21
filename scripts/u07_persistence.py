@@ -34,7 +34,7 @@ from vwap_mr.data.alpaca import NY_TZ
 from vwap_mr.data.exo import Exo
 from vwap_mr.data.synthetic import daily_market
 from vwap_mr.experiments import persistence as ps
-from vwap_mr.experiments.diagnose import diag_market, nw_mean
+from vwap_mr.experiments.diagnose import diag_market
 from vwap_mr.experiments.ledger import Ledger
 from vwap_mr.experiments.looks import LOOKS_PATH, check_window, looked, looks_total
 from vwap_mr.experiments.runner import splits
@@ -58,7 +58,12 @@ class Data:
             self._long = daily_market("SPY", "1993-01-29", "2025-12-31", 7)
 
     def dev(self, sym: str) -> Market:
-        if self.vintage is None:
+        if (
+            self.vintage is None
+        ):  # synthetic SPY is the long series' tail, so states describe the traded series
+            if sym == "SPY":
+                keep = self._long.index >= pd.Timestamp(DEV_START, tz=NY_TZ)
+                return Market(self._long.sessions[keep], "synthetic", exo=self._long.exo, symbol="SPY")
             return daily_market(sym, str(DEV_START), "2025-12-31", SYMBOLS.index(sym) + 1)
         return load_market(sym, DEV_START, HOLDOUT_START, vintage=self.vintage)
 
@@ -132,7 +137,7 @@ def diag_stream(data: Data) -> pd.DataFrame:
         m, r0(), fill="next_open", costs=CostModel(0.0, fees=False), cash_yield=tbill_yield(m)
     )
     lg = res.ledger.iloc[1:]
-    rt = ps.historical_rt_bp(frame["close_split"]).reindex(lg.index)
+    rt = ps.historical_rt_bp(frame["close_split"].shift(1)).reindex(lg.index)  # cost booked at row t's open
     net = ps.at_cost(lg["net"], lg["traded"], rt)
     return pd.DataFrame({"gross": lg["gross"], "excess_hist": net - lg["rf"], "rt_bp": rt})
 
@@ -152,7 +157,7 @@ def bp_section(x: pd.Series, title: str) -> tuple[str, dict]:
     rows = [[f"{l['l']} → {l['l'] + 1}", f2(l["supF"], sign=False), f"{l['p']:.3f}"] for l in b["sequential"]]
     lines = [(f"**{title}** — breaks chosen (sequential, 5 %): **{b['n_breaks']}**; UDmax {f2(b['UDmax'], sign=False)} "
              f"(p {b['UDmax_p']:.3f}); h = {b['h']} sessions."), "",
-             table(["step", "supF(l+1 | l)", "p"], rows), ""]  # fmt: skip
+             table(["step", r"supF(l+1 \| l)", "p"], rows), ""]  # fmt: skip
     if b["n_breaks"]:
         lines += [table(["segment from", "mean bp/day"], [[d, f2(mu * 1e4)] for d, mu in
                                                           zip(seg, b["segment_means"], strict=True)]),
@@ -177,7 +182,8 @@ def kalman_section(x: pd.Series) -> tuple[str, dict]:
         (f"Whole-sample MLE: q̂ = {fit['q']:.2e} (σ̂_ε {np.sqrt(fit['sigma2_eps']) * 1e4:.1f} bp); LR test of q = 0: "
         f"{f2(fit['lr_q0'], sign=False)}, p {fit['p_q0']:.3f} → **q_zero = {fit['q_zero']}**"
         f"{' (q̂ at the grid edge)' if fit['q_at_grid_edge'] else ''}. Filtered μ_T = {f2(fit['mu_T'] * 1e4)} bp/day "
-        f"(sd {f2(fit['sd_T'] * 1e4, sign=False)}); **P(μ_T > 0) = {fit['P_mu_T_pos']:.3f}** at q̂, "
+        f"(sd {f2(fit['sd_T'] * 1e4, sign=False)}; 90 % interval [{f2((fit['mu_T'] - 1.645 * fit['sd_T']) * 1e4)}, "
+        f"{f2((fit['mu_T'] + 1.645 * fit['sd_T']) * 1e4)}]); **P(μ_T > 0) = {fit['P_mu_T_pos']:.3f}** at q̂, "
         f"{fit['P_mu_T_pos_q0']:.3f} at q = 0 (the full-sample mean's posterior)."), "",
         "Profile log-likelihood (relative to its maximum):", "", table(["q", "Δ log L"], prof), "",
         (f"Causal track (refit every 21 sessions on the past only, from session 252; {len(tr['refits'])} refits, "
@@ -236,8 +242,8 @@ def cond_section(data: Data, x: pd.Series, res, market: Market) -> str:
 
 def coherence_section(streams: dict[str, pd.Series]) -> str:
     rows = ps.coherence_by_year(streams)
-    out = [table(["year", *streams, "same sign as SPY"],
-                 [[r["year"], *[f2(r[s]) for s in streams], f"{r['same_sign']} / {len(streams)}"] for r in rows])]  # fmt: skip
+    out = [table(["year", *streams, "others with SPY's sign"],
+                 [[r["year"], *[f2(r[s]) for s in streams], f"{r['same_sign']} / {len(streams) - 1}"] for r in rows])]  # fmt: skip
     corr = pd.DataFrame(streams).corr()
     out += ["", "Correlation of the daily net excess streams:", "",
             table(["", *corr.columns], [[i, *[f2(v, 2, sign=False) for v in corr.loc[i]]] for i in corr.index]), ""]  # fmt: skip
@@ -281,9 +287,15 @@ def main(argv=None) -> int:
         return looked(f"U7 {label}", n, fn, window=window, path=looks_path)
 
     sec = {}
-    sec["dev_periods"] = look("dev by-year + rolling 3y (H1 stream)", 1, "dev",
-                              lambda: periods_section(x, "H1 stream, net excess @1.0 bp") +
-                              "\n" + periods_section(res.ledger["gross"].iloc[1:], "H1 stream, gross"))  # fmt: skip
+
+    def dev_periods():
+        last5 = ps.period_row(x[ps._years(x) >= 2021], "2021–2025 (last 5 years; the summary line)")
+        text = (periods_section(x, "H1 stream, net excess @1.0 bp") + "\n**H1 stream, net excess @1.0 bp — last "
+                "5 years**\n\n" + period_table([last5]) + "\n\n" +
+                periods_section(res.ledger["gross"].iloc[1:], "H1 stream, gross"))  # fmt: skip
+        return text, last5
+
+    sec["dev_periods"], last5 = look("dev by-year + rolling 3y + last 5y (H1 stream)", 1, "dev", dev_periods)
     sec["diag_periods"] = look("diag by-year + rolling 3y (R0 1993-2015)", 1, "diag",
                                lambda: periods_section(dg["gross"], "diag R₀, gross") + "\n" +
                                periods_section(dg["excess_hist"], "diag R₀, net excess at the historical schedule"))  # fmt: skip
@@ -297,11 +309,9 @@ def main(argv=None) -> int:
                        lambda: cond_section(data, x, res, mkt))  # fmt: skip
     sec["coh"] = look("dev cross-instrument coherence (QQQ, IWM, DIA by year)", 3, "dev",
                       lambda: coherence_section(xs))  # fmt: skip
-    last5 = x[x.index.year >= 2021]
-    t5 = nw_mean(last5)[1]
     k1 = looks_total(looks_path)
     seq_p = bp_dev["sequential"][0]["p"]
-    summary = (f"last-5-year (2021–2025) Newey–West t {t5:.2f} ({nw_mean(last5)[0] * 1e4:+.2f} bp/day); Bai–Perron "
+    summary = (f"last-5-year (2021–2025) Newey–West t {last5['t_nw']:.2f} ({last5['mean_bp_day']:+.2f} bp/day); Bai–Perron "
                f"{bp_dev['n_breaks']} break(s) (supF(1) p {seq_p:.3f}, UDmax p {bp_dev['UDmax_p']:.3f}); "
                f"P(μ_T > 0) = {kal['P_mu_T_pos']:.3f} at q̂ ({kal['P_mu_T_pos_q0']:.3f} at q = 0; causal track "
                f"{kal['track_P_T']:.3f}), q_zero {kal['q_zero']}")  # fmt: skip

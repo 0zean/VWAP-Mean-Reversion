@@ -94,7 +94,7 @@ def test_coherence_by_year():
     s = {"SPY": pd.Series(np.where(y16, 1e-4, -1e-4), index=idx), "QQQ": pd.Series(1e-4, index=idx),
          "IWM": pd.Series(np.where(y16, -1e-4, -2e-4), index=idx)}  # fmt: skip
     rows = ps.coherence_by_year(s)
-    assert [r["same_sign"] for r in rows] == [2, 2]
+    assert [r["same_sign"] for r in rows] == [1, 1]
 
 
 def test_edge_monitor_equals_the_causal_track():
