@@ -323,7 +323,8 @@ the other execution; vol-targeted at 10 %.
   coherence ≥ 12 of 16 cells positive.
 - **Verdict:** **confirmed** — one-sided p < 0.05, floors, coherence; **promising** — one-sided p < 0.10 (the
   one-sided 90 % lower bound is > 0), floors, coherence → H2–H4 run as registered and the configuration goes to
-  the forward test labelled *diagnostic*; **rejected** — otherwise → H3/H4 run on the `diag` sample with the vol
+  the forward test labelled *diagnostic*; **rejected** — otherwise → (amended 2026-10-21, §11: H3 and H4 run on the
+  development window as diagnostics with the amended H3 headline program; the original routing follows) H3/H4 run on the `diag` sample with the vol
   baseline only, as diagnostics, and the program reports a null.
 - Reported: beta and alpha against SPY, the cost curve, every split (year, vol quintile, VIX tercile, weekday,
   long vs short side, overnight vs intraday leg).
@@ -360,7 +361,8 @@ the **conditional mean**:
   estimator yields few independent episodes in ten years — the daily test is honest under the null, but the
   result rests on those episodes and the report says how many); the incremental HAC regression of each
   estimator/regime variable on top of the two baselines B1 and B4.
-- **Headline program (Holm over 4):** B1, B4, E2, R2 (table below). Everything else is a variant.
+- **Headline program (Holm over 4):** B1, B4, B5, R2 (table below; amended 2026-10-21, §11: B5 replaces E2, which U8
+  rated under-powered). Everything else is a variant.
 - Estimator and regime configurations (windows, scale ranges, state count, hazard set, thresholds, standardization
   windows, priors) are **frozen in U8/U9 from synthetic studies** and written into the spec draft before any
   market P&L is read. A later change is an amendment.
@@ -371,10 +373,10 @@ the **conditional mean**:
 | B2 | VIX | close as-of the decision; quantile vs trailing 504 | top tercile (0.33) |
 | B3 | lag-1 autocorrelation | of daily returns over 63 | < 0 (≈ 0.5, reported) |
 | B4 | reversion speed | AR(1) φ of the state deviation d*_t (§8.1) over 126; quantile vs trailing 504 | below median (0.50) |
-| B5 | variance ratio | Lo–MacKinlay VR(5) over 252 | < 1 (≈ 0.5, reported) |
+| **B5** | variance ratio | Lo–MacKinlay VR(5) over 252 | < 1 (≈ 0.5, reported) |
 | B6 | strategy momentum | region net P&L over the trailing 63 | > 0 (≈ 0.5, reported) |
 | E1 | DFA α, standard | DFA-1 on returns over 504, scales s ∈ [10, 126] | below trailing-504 median (0.50) |
-| **E2** | DFA α, short-scale | DFA-1 on returns over 504, scales s ∈ [4, 32] (the 1–6-week horizon the rule trades) | below trailing-504 median (0.50) |
+| E2 | DFA α, short-scale | DFA-1 on returns over 504, scales s ∈ [4, 32] (the 1–6-week horizon the rule trades) | below trailing-504 median (0.50) |
 | E3 | wavelet H, short-scale | Abry–Veitch on the causal MODWT, levels j = 1–4, window 512 | below trailing-504 median (0.50) |
 | E4 | MF-DFA | h(2) and spectrum width Δα over 1,008; q ∈ {−5 … 5} | h(2) below trailing median (0.50); Δα reported only |
 | R1 | HMM, 2-state | Gaussian HMM on returns standardized by trailing 252 σ; EM on trailing 1,008, refit every 21; states ordered by σ; **one-step-ahead** P(high-σ state at t+1 \| ≤ t) | P > 0.5 |
@@ -757,8 +759,8 @@ windows we could use, and freeze the registered configurations before any market
 **Reviewer focus.** DFA on returns vs on the profile (α vs α + 1); the short-scale set's lower bound (s = 4 is
 noisy); overlapping-estimate autocorrelation; the trailing-median window (504) for every "below median" set.
 
-**Cost.** 1½ sessions. **Depends on.** U0 (synthetic), U1 (market), U6 for B6. **Status.** done on
-`unit/08-estimators` (9802a06), not merged; 3/3 done-when; **E1–E4 under-powered** (SD > 0.025 at every window ≤ 1,008);
+**Cost.** 1½ sessions. **Depends on.** U0 (synthetic), U1 (market), U6 for B6. **Status.** done, merged
+into `dev` (567eed8; branch @ 9802a06), not merged; 3/3 done-when; **E1–E4 under-powered** (SD > 0.025 at every window ≤ 1,008);
 `results/reports/U08_estimators.md`, `U08_status.md`.
 
 ---
@@ -796,7 +798,7 @@ series for delay and false-alarm rate, with configurations frozen before market 
 **Reviewer focus.** Smoothed vs filtered vs predicted; label switching across refits; EM seeds; the first sessions
 of the `diag` warm-up (no model yet) handled as "no gate" and counted; the NIG prior not centred on reversion.
 
-**Cost.** 1½–2 sessions. **Depends on.** U8. **Status.** done on `unit/09-regime` (2ac613c, stacked on
+**Cost.** 1½–2 sessions. **Depends on.** U8. **Status.** done, merged into `dev` (e1b4ea0; branch @ 2ac613c, stacked on
 `unit/08-estimators`), not merged; 2/2 done-when; R2 beats B4 on synthetic regimes but invents regimes without them;
 R1 ≈ B1; R3 conservative; `results/reports/U09_detection.md`, `U09_status.md`.
 
@@ -806,7 +808,8 @@ R1 ≈ B1; R3 conservative; `results/reports/U09_detection.md`, `U09_status.md`.
 
 **Goal.** Register and run §6.4 on the H1 region stream.
 
-**Scope.** `strategies/gates.py`; `specs/H3_regime_gates.yaml` (headlines B1, B4, E2, R2; variants from the §6.4
+**Scope.** `strategies/gates.py`; `specs/H3_regime_gates.yaml` (headlines B1, B4, B5, R2 as amended 2026-10-21 — run on the development window as a
+**diagnostic**, §11; E1–E4 variants labelled under-powered (U8); variants from the §6.4
 table and the regime layer's hyper-parameter sensitivity: refit cadence {21, 63}, EM window {756, 1,512}, λ
 sets, κ-free; ≤ 12 variants; MDE line per headline at its π); the incremental regressions; the episode count;
 `results/reports/U10_regimes.md`.
@@ -1006,8 +1009,8 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U5 | reproduce and diagnose | done, merged | K = 112 (every window; 48 dev rows); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
 | U6 | H1 existence | done, merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
 | U7 | H2 persistence | done, merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
-| U8 | state estimators + noise study | done, not merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
-| U9 | regime models + detection study | done, not merged | synthetic: R2 Youden J 0.63–0.67 vs B4 0.30–0.53, but 40 % 'fast' calls on a no-regime null; R1 J ≈ B1; R3 catches 21 % of σ doublings, ~0 false alarms; decision < 1 ms, refit 0.2 s / 21 sessions; 252 tests |
+| U8 | state estimators + noise study | done, merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
+| U9 | regime models + detection study | done, merged | synthetic: R2 Youden J 0.63–0.67 vs B4 0.30–0.53, but 40 % 'fast' calls on a no-regime null; R1 J ≈ B1; R3 catches 21 % of σ doublings, ~0 false alarms; decision < 1 ms, refit 0.2 s / 21 sessions; 252 tests |
 | U10 | H3 predictability | not started | |
 | U11 | H4 blend | not started | |
 | U12 | holdout read, verdict, registry | not started | |
@@ -1022,6 +1025,27 @@ accesses = 0.
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- **2026-10-21 — U8 / U9 merged; amendment: H3 / H4 routing and H3's headline program (user decisions).**
+  - Merges: `unit/08-estimators` into `dev` (567eed8), then `unit/09-regime` (e1b4ea0). The done-gate passes on
+    the merged tree (252 tests).
+  - **Routing amended.** The §6.2 "rejected" branch no longer confines H3 / H4 to `diag` with the vol baseline.
+    H3 (U10) and H4 (U11) run on the **development window 2016–2025 as diagnostics**, with R2 in both: H3's
+    headline gate, and H4's blend weight. The user's reason: the regime layer may improve on the vanilla rule.
+  - **H3 headline program amended.** It is now B1, B4, **B5**, R2 (Holm over 4). B5 (Lo–MacKinlay VR(5) over 252,
+    favourable < 1) replaces E2, which U8's decision rule rates under-powered (SD 0.044 at 504 > 0.025).
+    - B5 was chosen without reference to development-window results: it was not among U7's conditional tables.
+    - It measures the reversal mechanism directly, at the rule's horizon.
+    - E1–E4 stay as variants labelled under-powered.
+  - Consequences that stand:
+    - These tests are read under **K ≥ 154**, on a window where H1 was rejected and its stream already examined
+      (U6, U7). Their p·K bounds will be large.
+    - The power table (§6.6) already puts H3 below its MDE on 2016–2025 (≈ 13 bp/day under Holm 4), so a
+      rejection says little. A pass would need the holdout (U12) and the forward test (U13) to count.
+    - R2 gates must be reported with their φ separation and degenerate-refit counts (U9: on regime-free data R2
+      calls "fast" 40 % of the time).
+  - `specs/H3_regime_gates.yaml` (draft) updated: the headline list and the routing note.
+  - Next: U10, on the amended program.
 
 - 2026-10-21 — U9 causal regime models and detection study. Branch `unit/09-regime` @ 2ac613c (stacked on
   `unit/08-estimators`). Done-when: 2/2 ticked (`results/reports/U09_status.md`, report `U09_detection.md`).

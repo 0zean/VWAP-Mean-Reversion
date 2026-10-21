@@ -39,3 +39,5 @@ regime_configuration:
     - - 0.6511363209803301
       - 0.6788653053722058
   R4: 'optional, not built (§7 U9: only if time remains after R1–R3)'
+routing: 'amended 2026-10-21 (PLAN §11): H4 runs on the development window 2016-2025
+  as a diagnostic, blend weight from R2'

@@ -2,9 +2,8 @@
 id: H3_regime_gates
 status: draft — not registered; U8 states and U9 regime models frozen; U10 completes
   and registers it
-routing: 'PLAN §11 2026-10-21: under §6.2 ''rejected'', the registered H3 runs on
-  diag with the vol baseline only, as a diagnostic; this table is the frozen configuration
-  of every state variable'
+routing: 'amended 2026-10-21 (PLAN §11): H3 runs on the development window 2016-2025
+  as a diagnostic; read under K >= 154'
 state_configuration:
   estimators:
   - label: E1
@@ -147,3 +146,10 @@ regime_configuration:
     pi: reported, not fixed
   R4: 'optional, not built (§7 U9: only if time remains after R1–R3)'
   no_gate_before_first_fit: NaN (counted by U10, never filled)
+headlines:
+- B1
+- B4
+- B5
+- R2
+headline_note: 'B5 (VR(5) over 252, favourable < 1) replaces E2 (U8: under-powered);
+  E1-E4 are variants labelled under-powered'
