@@ -1,61 +1,116 @@
-# DRAFT (U9; amended 2026-10-21 after U10). Not a registered spec; the runner refuses it.
+# H4 — the regime-weighted blend of the MR and trend regions vs the static blend (PLAN.md §6.5, §7 U11; weight
+# amended 2026-10-21 after U10, §11). Pre-registration: `experiments/h4.py::run_h4` runs this file once, from its
+# committed SHA (recorded in every ledger row as spec_sha). An amendment is a new file. The TSMOM horizons and the
+# vol-managed benchmark are fixed from the literature (PLAN §6.5); the weight's B1 gate is H3's, unchanged.
 id: H4_blend
-status: draft — not registered; U11 completes it
+mechanism: >
+  If the daily reversal R0 trades earns more when realized volatility is high (U10's B1 gate, Δμ +2.86 bp/day, not
+  significant) while trend following does not depend on that state, tilting a 50/50 MR / TSMOM blend toward MR in
+  high-vol states and toward TSMOM elsewhere raises the blend's Sharpe over the static 50/50 blend.
+routing: >
+  amended 2026-10-21 (PLAN §11): H4 runs on the development window 2016-2025 as a diagnostic. The weight's state, B1,
+  was chosen after its H3 Δμ was read on this window, so a pass cannot confirm anything (read under K >= 170); only
+  the holdout (U12) and the forward test (U13) can.
+instruments:
+  headline: SPY
+  splits: []
+window: {start: 2016-01-04, end: 2025-12-31}
+vintage: "2026-10"
+strategy: {name: blend, region: R0}   # R0 rebuilt and checked against its H1 ledger row
+execution: {decision: close, fill: next_open}
+cost:
+  registered_bp: 1.0
+  curve: [1.0]
+  borrow_rate: 0.004
+  fees: true
+account: margin_30k
+test:
+  kind: paired_sharpe      # Ledoit–Wolf ΔSharpe, blend − its static 50/50 blend, paired daily net excess returns
+  sided: one               # H1: ΔSharpe > 0
+  block: 21
+  n_boot: 5000
+  seed: 0
+  alpha: 0.05
+floors:
+  net_ratio_min: 0.9       # blend net ann. >= static net ann. − (1 − 0.9)·|static's| (= 0.9× when static > 0)
+expected:
+  magnitude_bp_day: 0.35   # mean daily return of blend − static
+  delta_sharpe: 0.08
+  source: >
+    blend − static = (w_t − 0.5)(r^MR − r^TF) = ±0.25 (r^MR − r^TF). From U10 (results/reports/U10_regimes.md §1)
+    R0's mean is +1.49 bp/day in B1's favourable set (π 0.40) and −1.37 elsewhere; assuming TSMOM's mean does not
+    depend on B1 (its development-window P&L is not read before this run), the mean difference is
+    0.25 × (0.40 × 1.49 + 0.60 × 1.37) + 0.05 μ_TF ≈ 0.35 bp/day + 0.05 μ_TF (μ_TF not read; taken as 0); at the assumed static σ of 72 bp/day (power.sigma_d_bp) that
+    is ΔSharpe ≈ 0.35 / 72 × √252 ≈ 0.08 annualized. A development-window number already read. Two terms are left
+    out (U11 review) and may be as large: (1) a static tilt, E[w] = 0.5 + κ(π − 0.5) = 0.45, adds
+    (0.5 − E[w])(μ_TF − μ_MR) = 0.05 (μ_TF − μ_MR) per day, reported apart through the matched-mean static split;
+    (2) a varying w raises the blend's variance (E[w² + (1 − w)²] = 0.625 vs 0.5; σ ratio ≈ 1.12 at ρ_MR,TF = 0,
+    1.21 at −0.3), which lowers ΔSharpe by ≈ 0.1–0.17 × the static Sharpe.
+power:
+  n: 2513
+  sigma_d_bp: 72.0         # assumed static-blend σ: 0.5 × √(92.4² + 110²), R0's diag σ and SPY's ≈ 110 bp, ρ = 0
+  rho: 0.9                 # blend vs static: (0.375 + 0.125) / √(0.625 × 0.5) ≈ 0.89 for uncorrelated components;
+                           # at ρ_MR,TF = −0.3 it is ≈ 0.83 and the MDE ≈ 0.46 (U11 review; diagnostic either way)
+  k: 1
+  alpha: 0.05
+  power: 0.80
+  mde_delta_sharpe: 0.352  # stats.power.mde_delta_sharpe(2513, 0.9): √(2(1 − ρ)/n)·√252·(z_0.95 + z_0.80)
+  diagnostic: true         # expected 0.08 < 0.35
+headlines: [B1]
+variants:                  # PLAN §6.5 (κ's two values are two cells; Donchian-55 is §6.5's TF variant)
+  - R2
+  - B1_percentile
+  - B6_diff
+  - hard_switch
+  - kappa_025
+  - kappa_075
+  - vol_target_10          # blend × min(1, 10 % / σ̂_21 of SPY): H1's vol_target_10 scaling, not a blend-vol target
+  - donchian55
+splits: [benchmarks, matched_mean_static, matched_vol, drawdown, mr_tf_corr_by_year, turnover_attribution, r2_refits]
+budget: 9                  # 1 headline + 8 variants
 blend:
-  weight: w_t = 0.5 + κ (P_t − 0.5)
-  P_t: B1 favourable-set indicator at the decision (σ̂ of returns over 21 in the top two quintiles of its trailing
-    504; H3's B1 gate, specs/H3_regime_gates.yaml)
-  w_values: [0.25, 0.75]
-  kappa: 0.5
-  components:
-  - R0 (H1 region)
-  - TSMOM {21, 63, 126, 252}, equal weight
+  weight: w_t = 0.5 + κ (P_t − 0.5), P_t as of the decision (the same decision as both components' targets)
+  mr: R0                   # strategies/vwap_mr.py
+  tf: {TSMOM: [21, 63, 126, 252], DC55: 55}   # strategies/trend.py
+  benchmarks:
+    static: w_t = 0.5 with the configuration's own TF and vol target (each configuration's ΔSharpe is vs its own)
+    matched_mean_static: >
+      reported, not tested: w fixed at E[w] = 0.5 + κ(π_registered − 0.5) for B1 weights (realized mean w otherwise,
+      descriptive), same TF and vol target: the blend's timing value without its static tilt toward TF
+    mr_alone: R0
+    tf_alone: TSMOM (and DC55)
+    vol_managed: {sigma: 0.15, window: 21, cap: 1.0}   # min(1, 15 % / σ̂_21), σ̂ = B1_vol × √252
+configurations:            # P: the weight's state; undefined: the w_t used where P_t is NaN (else the run raises)
+  B1: {P: B1, kappa: 0.5, tf: TSMOM}              # w ∈ {0.25, 0.75}
+  R2: {P: R2, kappa: 0.5, tf: TSMOM}              # U10 caveat: φ separation 0.028, 103 / 121 refits swap-flagged
+  B1_percentile: {P: B1_pct, kappa: 0.5, tf: TSMOM}
+  B6_diff: {P: B6_diff, kappa: 0.5, tf: TSMOM, undefined: 0.5}   # first 62 sessions: static, counted (required)
+  hard_switch: {P: B1, kappa: 1.0, tf: TSMOM}     # w ∈ {0, 1}
+  kappa_025: {P: B1, kappa: 0.25, tf: TSMOM}
+  kappa_075: {P: B1, kappa: 0.75, tf: TSMOM}
+  vol_target_10: {P: B1, kappa: 0.5, tf: TSMOM, sigma: 0.10}
+  donchian55: {P: B1, kappa: 0.5, tf: DC55}
 weight_configuration:
+  trailing_quantile_window: 504
   B1:
     column: B1_vol
     definition: σ̂ of close-to-close returns over 21 (features/state.py REGISTERED.vol)
     rule: q_above
     threshold: 0.6
-    trailing_quantile_window: 504
     pi: 0.4
-variants:
-- 'R2: w_t from R2''s one-step-ahead P(fast reversion), the configuration below (U10 caveat: on 2016-2025 its two
-  φs differ by 0.028 at the median, 103 of 121 refits swap-flagged; reported, not a headline)'
-- 'B1_percentile: P_t = B1''s trailing-504 percentile (continuous)'
-- 'B6_diff: P_t from B6 computed on MR − TF (63-session net P&L of MR minus TF > 0)'
-- 'hard_switch: w_t ∈ {0, 1}'
-- 'kappa: κ ∈ {0.25, 0.75}'
-- 'vol_target_10: the blend vol-targeted at 10 %'
-regime_configuration:
-  R2:
+  B1_pct: trailing-504 percentile of B1_vol (persistence.trailing_quantile, today included)
+  B6_diff:
+    definition: 1[Σ over the last 63 sessions of (R0 net − TSMOM net) > 0], both at the registered cost
+    window: 63
+  R2:                      # H3's frozen U9 configuration (specs/H3_regime_gates.yaml)
     model: MS-AR(1), intercept form (switching c, φ, σ²)
     input: d*_t (§8.1, n = 5)
+    n: 5
     fit_window: 1008
     refit_every: 21
     order: by φ; regime 0 = smaller φ = fast reversion
-    swap_flag: '|φ₁ − φ₀| < 0.05'
-    output: one-step-ahead P(fast at t+1 | ≤ t)
-    favourable: P > 0.5
-    pi: reported, not fixed
-    random_walk_phi_126:
-      window: 126
-      mean: 0.7059145678476755
-      sd: 0.05480026751628675
-      q05: 0.6092228482163446
-      q95: 0.7891915044010612
-    random_walk_r2_phi_pairs:
-    - - 0.6331231890207236
-      - 0.6531226009680899
-    - - 0.6133111299707203
-      - 0.7485606473918466
-    - - 0.39071503307121913
-      - 0.7619017214381908
-    - - 0.6458285012219483
-      - 0.6949883121899287
-    - - 0.6006816905034809
-      - 0.6788892823837224
-    - - 0.6511363209803301
-      - 0.6788653053722058
+    output: one-step-ahead P(fast at t+1 | ≤ t), continuous
   R4: 'optional, not built (§7 U9)'
-routing: 'amended 2026-10-21 (PLAN §11): H4 runs on the development window 2016-2025 as a diagnostic; blend weight
-  from B1 (amended after U10, chosen after B1''s H3 Δμ was read: diagnostic under K >= 170)'
+looks: >
+  n = 12: the 9 configurations and three new reference streams read on this window (TSMOM alone, DC55 alone, the
+  vol-managed buy-and-hold); the static blends belong to their configurations and R0 alone is H1's stream.
