@@ -1,0 +1,90 @@
+# DRAFT (U8). Not a registered spec: it lacks §8.7's required fields and the runner refuses it.
+id: H3_regime_gates
+status: draft — not registered; U9 adds R1–R4, U10 completes and registers it
+routing: 'PLAN §11 2026-10-21: under §6.2 ''rejected'', the registered H3 runs on
+  diag with the vol baseline only, as a diagnostic; this table is the frozen configuration
+  of every state variable'
+state_configuration:
+  estimators:
+  - label: E1
+    column: E1_dfa_std
+    estimator: DFA-1 standard [10, 126]
+    window_6_4: 504
+    window: 504
+    scale_set: standard [10, 126]
+    favourable: below trailing-504 median
+    pi: 0.5
+    sd_at_6_4: 0.0656
+    sd_at_window: 0.0656
+    status: under-powered
+  - label: E2
+    column: E2_dfa_short
+    estimator: DFA-1 short [4, 32]
+    window_6_4: 504
+    window: 504
+    scale_set: short [4, 32]
+    favourable: below trailing-504 median
+    pi: 0.5
+    sd_at_6_4: 0.0442
+    sd_at_window: 0.0442
+    status: under-powered
+  - label: E3
+    column: E3_av_short
+    estimator: Abry–Veitch short j 1–4
+    window_6_4: 512
+    window: 512
+    scale_set: MODWT j 1–4
+    favourable: below trailing-504 median
+    pi: 0.5
+    sd_at_6_4: 0.0531
+    sd_at_window: 0.0531
+    status: under-powered
+  - label: E4
+    column: E4_h2
+    estimator: DFA-1 standard [10, 126]
+    window_6_4: 1008
+    window: 1008
+    scale_set: standard [10, 126], q −5 … 5
+    favourable: h(2) below trailing median
+    pi: 0.5
+    sd_at_6_4: 0.0489
+    sd_at_window: 0.0489
+    status: under-powered
+  baselines:
+  - label: B1
+    column: B1_vol
+    definition: σ̂ of returns over 21; quantile vs trailing 504
+    favourable: top two quintiles
+    pi: 0.4
+  - label: B2
+    column: B2_vix
+    definition: VIX as of the decision; quantile vs trailing 504
+    favourable: top tercile
+    pi: 0.33
+  - label: B3
+    column: B3_ac1
+    definition: lag-1 autocorrelation over 63
+    favourable: < 0
+    pi: ≈ 0.5, reported
+  - label: B4
+    column: B4_phi
+    definition: AR(1) φ of d*_t over 126; quantile vs trailing 504
+    favourable: below median
+    pi: 0.5
+  - label: B5
+    column: B5_vr5
+    definition: VR(5) over 252
+    favourable: < 1
+    pi: ≈ 0.5, reported
+  - label: B6
+    column: B6_mom
+    definition: region net P&L over 63
+    favourable: '> 0'
+    pi: ≈ 0.5, reported
+  b4_random_walk_phi:
+    window: 126
+    mean: 0.7078532497242757
+    sd: 0.05397054295732081
+    q05: 0.6127894580411913
+    q95: 0.7884755657141984
+  trailing_quantile_window: 504

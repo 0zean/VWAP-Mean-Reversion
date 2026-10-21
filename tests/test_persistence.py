@@ -141,7 +141,9 @@ def test_script_dry_run_writes_only_to_scratch(tmp_path):
         "## 5.",
     ):
         assert head in md
-    rows = [json.loads(x) for x in (tmp_path / "looks.jsonl").read_text().splitlines()]
-    new = [r for r in rows if r["label"].startswith("U7 ")]
+    rows = [json.loads(x) for x in (tmp_path / "looks.jsonl").read_text().splitlines() if x.strip()]
+    n_real = sum(1 for x in LOOKS_PATH.read_text().splitlines() if x.strip())
+    new = rows[n_real:]  # the scratch file starts as a copy of the real ledger
+    assert all(r["label"].startswith("U7 ") for r in new)
     assert sum(r["n"] for r in new if r["window"] == "dev") == 12
     assert sum(r["n"] for r in new if r["window"] == "diag") == 2
