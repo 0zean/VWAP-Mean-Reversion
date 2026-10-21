@@ -355,7 +355,7 @@ def r0_section(data: Data) -> tuple[str, dict]:
         (
             f"SPY `diag` {frame.index[1].date()} → {frame.index[-1].date()}, `next_open` (the headline execution), "
             "VWAP from the total-return close × Yahoo volume; net excess at the registered 1.0 bp round trip, DTB3 "
-            "cash, borrow 0.4 %/yr. Break-even = the round-trip cost (bp) at which the gross edge is spent."
+            "cash, borrow 0.4 %/yr. Break-even = the spread + slippage per round trip (bp) at which the gross edge is spent, gross of carry."
         ),
         "",
         table(
@@ -365,7 +365,7 @@ def r0_section(data: Data) -> tuple[str, dict]:
                 "t_NW",
                 "net excess @1.0 bp [90 %]",
                 "round trips/yr",
-                "break-even bp/RT",
+                "break-even bp/RT (gross of carry)",
                 "flat share",
             ],
             rows,
