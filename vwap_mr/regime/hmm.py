@@ -19,7 +19,12 @@ and the one-step-ahead probability P(s_{t+1} | ≤ t) = filtered_t·A. Tested eq
 fitted on rows r − fit_window … r − 1 (sessions ≤ r − 1), and rows r … r + refit_every − 1 are filtered with those
 parameters (the filter runs from the window's start). Row t's output is the probability of the target regime at
 t + 1 given rows ≤ t, from parameters that saw only rows < r ≤ t. Rows before the first refit are NaN ("no gate",
-counted by the caller); a refit whose optimizer reports no convergence is kept and counted in `refits`."""
+counted by the caller); a refit whose optimizer reports no convergence is kept and counted in `refits`, as is a
+*degenerate* refit (one regime with ergodic mass < 10 % or A[i, i] < 0.5: an outlier mixture component rather than a
+regime; on regime-free data the σ ordering then calls the 90 % regime "high", so R1's π is arbitrary there). A NaN in
+the fit window skips the refit; a NaN inside a block ends that block's output (no gate after it): whether a gate
+exists at row t never depends on rows after t. One deterministic start per fit (statsmodels' default), no
+multi-start."""
 
 import warnings
 from dataclasses import dataclass
@@ -29,6 +34,9 @@ import pandas as pd
 from scipy.special import logsumexp
 
 LOG2PI = np.log(2 * np.pi)
+DEGENERATE_MASS = (
+    0.10  # a regime with ergodic mass < 10 % or expected duration < 2 sessions is an outlier component
+)
 
 
 @dataclass(frozen=True)
@@ -114,9 +122,13 @@ def rolling_regime(y: pd.Series, x: pd.Series | None = None, *, kind: str, fit_w
     first = int(np.argmax(ok)) + fit_window if ok.any() else T
     for r in range(first, T, refit_every):
         lo, stop = r - fit_window, min(T, r + refit_every)
-        if not ok[lo:stop].all():
-            refits.append({"session": r, "skipped": "NaN in the window"})
+        if not ok[lo:r].all():  # the fit sees rows < r only; rows ≥ r are not looked at here
+            refits.append({"session": r, "skipped": "NaN in the fit window"})
             continue
+        bad = np.flatnonzero(~ok[r:stop])
+        stop = (
+            r + int(bad[0]) if len(bad) else stop
+        )  # filter until the first NaN row of the block (no gate after it)
         params, conv = fit_ms(yv[lo:r], None if xv is None else xv[lo:r])
         stat = params.sigma2 if kind == "sigma" else params.beta
         assert stat is not None
@@ -128,6 +140,8 @@ def rolling_regime(y: pd.Series, x: pd.Series | None = None, *, kind: str, fit_w
         p_next[r:stop] = out["one_step"][r - lo :, target]
         p_filt[r:stop] = out["filtered"][r - lo :, target]
         srt = np.sort(stat)
+        erg = params.ergodic()
         refits.append({"session": r, "converged": conv, "stat": srt.tolist(),
-                       "swap_flag": bool(kind == "phi" and srt[1] - srt[0] < 0.05)})  # fmt: skip
+                       "swap_flag": bool(kind == "phi" and srt[1] - srt[0] < 0.05),
+                       "degenerate": bool(erg.min() < DEGENERATE_MASS or np.diag(params.A).min() < 0.5)})  # fmt: skip
     return pd.DataFrame({"p_next": p_next, "p_filtered": p_filt}, index=y.index), refits

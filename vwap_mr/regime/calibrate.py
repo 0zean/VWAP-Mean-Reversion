@@ -237,17 +237,23 @@ def ms_series(n: int, dur: float, rng: np.random.Generator, *, kind: str) -> tup
 
 
 def detection_metrics(p_next: np.ndarray, target: np.ndarray, threshold: float = 0.5) -> dict:
-    """p_next[t] predicts target[t + 1]. The signal at t + 1 is p_next[t] > threshold. Delay: sessions from a switch
-    into the target regime to the first signal inside that spell (spells that end first count as missed). False
-    alarms: signal onsets while the target regime is off, per 1,000 evaluated sessions. Brier: mean (p − target)²."""
+    """p_next[t] predicts target[t + 1]; the signal at t + 1 is p_next[t] > threshold. Time-in-state metrics (these
+    separate a detector from a stuck or random signal): TPR = share of target-on sessions signalled, FPR = share of
+    target-off sessions signalled, Youden J = TPR − FPR, Brier = mean (p − target)². Delay: over spells that start
+    with the signal **off** on the session before the switch, sessions to the first signal inside the spell (spells
+    that end first are missed); spells entered with the signal already on are counted separately (`already_on`).
+    On a null (no target sessions) only `share_on` and FPR are defined."""
     p = np.asarray(p_next, dtype=float)[:-1]
     y = np.asarray(target, dtype=bool)[1:]
     ok = np.isfinite(p)
     p, y = p[ok], y[ok]
     sig = p > threshold
-    delays, missed = [], 0
+    delays, missed, already = [], 0, 0
     starts = np.flatnonzero(y & ~np.r_[True, y[:-1]])
     for s0 in starts:
+        if sig[s0 - 1]:
+            already += 1
+            continue
         k = s0
         while k < len(y) and y[k]:
             if sig[k]:
@@ -256,10 +262,13 @@ def detection_metrics(p_next: np.ndarray, target: np.ndarray, threshold: float =
             k += 1
         else:
             missed += 1
+    tpr = float(sig[y].mean()) if y.any() else float("nan")
+    fpr = float(sig[~y].mean()) if (~y).any() else float("nan")
     onsets = sig & ~np.r_[False, sig[:-1]]
-    return {"n": len(y), "switches": len(starts), "delay_median": float(np.median(delays)) if delays else np.nan,
-            "missed": missed, "false_alarms_per_1000": float((onsets & ~y).sum() / len(y) * 1000),
-            "brier": float(np.mean((p - y) ** 2)), "share_on": float(sig.mean())}  # fmt: skip
+    return {"n": len(y), "switches": len(starts), "already_on": already,
+            "delay_median": float(np.median(delays)) if delays else np.nan, "missed": missed, "tpr": tpr, "fpr": fpr,
+            "youden": tpr - fpr, "false_alarms_per_1000": float((onsets & ~y).sum() / len(y) * 1000),
+            "brier": float(np.mean((p - y) ** 2)) if y.any() else float("nan"), "share_on": float(sig.mean())}  # fmt: skip
 
 
 def baseline_prob(x: pd.Series, kind: str) -> pd.Series:

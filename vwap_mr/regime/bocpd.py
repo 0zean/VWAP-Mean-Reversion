@@ -93,9 +93,11 @@ def bocpd(
 
 
 def bocpd_avg(x, prior: NIG = DEFAULT_PRIOR, lams=LAMBDAS, *, prune: float | None = 10.0) -> dict:
-    """Equal-weight average of `bocpd` outputs over the hazard set."""
+    """Equal-weight average of the outputs of one run per hazard (§6.4's "hazard averaged over λ" read as output
+    averaging: not a mixture hazard, not evidence-weighted model averaging; in practice close to one run at the
+    harmonic-mean λ). `map_rl` is not averaged (an average of modes means nothing)."""
     runs = [bocpd(x, lam, prior, prune=prune) for lam in lams]
-    return {k: np.mean([r[k] for r in runs], axis=0) for k in ("p_r0", "p_recent", "e_rl", "map_rl")}
+    return {k: np.mean([r[k] for r in runs], axis=0) for k in ("p_r0", "p_recent", "e_rl")}
 
 
 def prior_from(z) -> NIG:

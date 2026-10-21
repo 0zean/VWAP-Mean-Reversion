@@ -10,6 +10,7 @@ from scipy import stats
 
 from vwap_mr.config import DecisionTime
 from vwap_mr.data.synthetic import daily_market
+from vwap_mr.features.deviation import state_deviation
 from vwap_mr.regime import calibrate as cb
 from vwap_mr.regime.bocpd import NIG, bocpd, bocpd_avg, prior_from
 from vwap_mr.regime.hmm import (
@@ -81,7 +82,31 @@ def test_rolling_regime_is_causal():
     m = daily_market("SPY", "2016-01-04", "2017-03-31", 2)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        assert_causal(_r1, m, CLOSE, k=3)
+        assert_causal(_r1, m, CLOSE)
+
+
+def test_r2_is_causal():
+    def r2(mk, fit=120, every=10):
+        d = state_deviation(mk.sessions["close_raw"], mk.sessions["volume"], 5)
+        return rolling_regime(d, pd.Series(d.shift(1)), kind="phi", fit_window=fit, refit_every=every)[0][
+            "p_next"
+        ]
+
+    m = daily_market("SPY", "2016-01-04", "2017-03-31", 3)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert_causal(r2, m, CLOSE)
+
+
+def test_a_nan_after_t_never_removes_the_gate_at_t():
+    x, _ = cb.ms_series(600, 50, np.random.default_rng(12), kind="sigma")
+    y = pd.Series(x)
+    base, _ = rolling_regime(y, kind="sigma", fit_window=200, refit_every=20)
+    holed = y.copy()
+    holed.iloc[215] = np.nan
+    out, log = rolling_regime(holed, kind="sigma", fit_window=200, refit_every=20)
+    np.testing.assert_array_equal(out["p_next"].iloc[:215], base["p_next"].iloc[:215])
+    assert out["p_next"].iloc[215:220].isna().all() and any(r.get("skipped") for r in log)
 
 
 def test_harness_catches_a_refit_that_sees_its_own_block():
@@ -182,10 +207,22 @@ def test_detection_metrics_by_hand():
     m = cb.detection_metrics(p, target)
     # signal at rows 1..9 = p[0..8] > 0.5 → [F, F, T, T, F, T, F, F, F]; target spells start at rows 2 and 7
     assert (
-        m["switches"] == 2 and m["delay_median"] == 1 and m["missed"] == 1
+        m["switches"] == 2 and m["delay_median"] == 1 and m["missed"] == 0
     )  # row 3 signals the spell of row 2
+    assert m["already_on"] == 1  # the signal at row 6 was on when the spell of row 7 began
     assert m["false_alarms_per_1000"] == pytest.approx(1 / 9 * 1000)  # the onset at row 6 (target off)
+    on = target[1:]
+    sig = p[:-1] > 0.5
+    assert m["tpr"] == pytest.approx(sig[on].mean()) and m["fpr"] == pytest.approx(sig[~on].mean())
     assert m["brier"] == pytest.approx(np.mean((p[:-1] - target[1:]) ** 2))
+
+
+def test_stuck_and_random_signals_score_zero_youden():
+    _, target = cb.ms_series(5000, 63, np.random.default_rng(8), kind="sigma")
+    stuck = cb.detection_metrics(np.ones(5000), target)
+    assert stuck["youden"] == pytest.approx(0.0) and stuck["already_on"] == stuck["switches"]
+    coin = cb.detection_metrics(np.random.default_rng(9).random(5000), target)
+    assert abs(coin["youden"]) < 0.05
 
 
 def test_change_metrics_by_hand():
