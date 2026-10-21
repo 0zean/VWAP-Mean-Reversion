@@ -669,14 +669,17 @@ the Alpaca development window** (that is U6's one test). Output `results/reports
 **Reviewer focus.** Any Alpaca 2016–2025 strategy P&L beyond the single inherited cell; the Yahoo adjustment
 emulation; the `same_close` mode leaking into non-diagnostic runs.
 
-**Cost.** 1 session. **Depends on.** U1, U3, U4. **Status.** done on `unit/05-diagnose` @ 4025902, awaiting merge;
-3/3 done-when; K 1 → 48; `results/reports/U05_diagnosis.md`, `U05_status.md`.
+**Cost.** 1 session. **Depends on.** U1, U3, U4. **Status.** done, merged into `dev` (7ac429c); 3/3
+done-when; K 1 → 112 (every window, §11 ruling); `results/reports/U05_diagnosis.md`, `U05_status.md`.
 
 ---
 
 ### U6 — H1: registration and the existence test
 
-**Goal.** Register and run the one existence test (§6.2) on R₀ as fixed in §6.1.
+**Goal.** Register and run the one existence test (§6.2) on R₀ as fixed in §6.1. **H1 is registered as a
+diagnostic** (user decision 2026-10-21, from U5): the expected magnitude, 2.3 bp/day net at 1.0 bp (an upper value;
+`diag` R₀ 1993–2015, 0.7–1.4 outside 2007–09), is below the MDE of 4.6 bp/day (n 2,513, σ_d 92 bp; power 0.35),
+so the spec carries `power.diagnostic: true` and its report says so beside the §6.2 verdict.
 
 **Scope.** `strategies/vwap_mr.py` (R₀), `specs/H1_vwap_mr.yaml` (§8.7 fields; variants per §6.1; splits per §6.2;
 execution per §9.2's answer or default), `experiments/spec.py`, `experiments/runner.py` (runs a spec once; writes
@@ -685,7 +688,7 @@ data hash; **refuses to render a report until `look` is recorded**), `experiment
 cost curve, splits, verdict).
 
 **Done when.**
-- [ ] Spec committed at a recorded SHA with the MDE line; runner refuses an uncommitted, dirty or over-budget spec
+- [ ] Spec committed at a recorded SHA with the MDE line, `expected` from U5 and `power.diagnostic: true`; runner refuses an uncommitted, dirty or over-budget spec
       (tests); report refused before `look` (test).
 - [ ] Run once; report written; verdict per §6.2 in §10 with p, lower 90 % bound, floors, coherence; cost curve.
 - [ ] R₀ and every variant pass the causality harness and the fills-after-decision test.
@@ -994,7 +997,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U2 | live plumbing smoke | not started | |
 | U3 | backtest, costs, account; SPEC §1–§5 | done, merged | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
 | U4 | statistics toolkit; SPEC §6 | done, merged | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman criterion amended (crossing-lag median 262 on the causal track) |
-| U5 | reproduce and diagnose | done, awaiting merge | K = 48 (all windows 112); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
+| U5 | reproduce and diagnose | done, merged | K = 112 (every window; 48 dev rows); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
 | U6 | H1 existence | not started | |
 | U7 | H2 persistence | not started | P(μ_T > 0) = |
 | U8 | state estimators + noise study | not started | |
@@ -1006,12 +1009,26 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U14 | intraday session-VWAP family | gated | |
 | U15 | ML conditioning overlay | gated | |
 
-Looks ledger K = 48 on the development window (1 seed + 47 from U5); 112 counting `diag`-only looks (window split
-proposed in §11, U5). Trials counted = 0. Holdout accesses = 0.
+Looks ledger K = 112, every window counted (§11 ruling 2026-10-21): 48 development-window rows (1 seed + 47 from
+U5) and 64 `diag`-only. Trials counted = 0. Holdout accesses = 0.
 
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- **2026-10-21 — U5 rulings (user) and merge.** `unit/05-diagnose` merged into `dev` (7ac429c).
+  - **Look counting: every window counts in K** (the conservative option of the proposal below). K = 112.
+    The `window` field stays as a label; `looks_total()` counts all rows, `looks_total(window="dev")` the
+    development-window share (48). p·K in every report uses 112.
+  - **H1 is registered as a diagnostic in U6** (§7 U6 rewritten).
+  - **The counted missing-cross fallback moved into `load_long`** (`bars.rth_fallback`, shared with `load_market`;
+    listed in the splice report's `fallback_sessions`; a session with no RTH bars raises). Frames identical before
+    and after on SPY, QQQ, IWM, DIA.
+  - Incident: during the equivalence check, `git worktree remove --force` on a scratch worktree that held a
+    junction to `data/cache` deleted the cache. The user restored it from a Windows previous version; both
+    manifests re-verify (`2026-10` a2efbd9f…674c, `diag` fe8ff374…7cf) and the built frames equal the
+    pre-deletion dump. No result changed.
+  - Next: U6 (§9.2 default `next_open` unless answered).
 
 - 2026-10-21 — U5 reproduce and diagnose. Branch `unit/05-diagnose` @ 4025902. Done-when: 3/3 ticked
   (`results/reports/U05_status.md`, report `U05_diagnosis.md`).
@@ -1028,7 +1045,7 @@ proposed in §11, U5). Trials counted = 0. Holdout accesses = 0.
     whether the counted missing-cross fallback moves into `load_long` (needed by U8 warm-up).
   - Next: merge `unit/05-diagnose`; U6 (needs §9.2, default `next_open`). R₀'s cell code (`strategies/vwap_mr.py`)
     already exists from U5.
-- **2026-10-21 — U5 proposal (applied in code, needs the user's ruling): look windows.**
+- **2026-10-21 — U5 proposal: look windows (ruled 2026-10-21 above: every window counts).**
   - The change: each look row carries `window: "dev" | "diag"`, and K (`looks_total`) counts dev rows only. A row
     without the field counts as dev.
   - Why: the Bonferroni bound p·K guards development-window tests. `diag`-only looks (1993–2015) never touch that

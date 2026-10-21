@@ -21,16 +21,17 @@ section 6 written by hand after the run).
 
 Decisions taken inside the unit:
 
-- **Look windows (needs the user's ruling, §11).** K counts development-window looks only; `diag`-only looks are
-  recorded with `window: "diag"` and reported beside K. Without the split, the 63 `diag` configurations would
-  enter the Bonferroni bound of H1's p although they never touch 2016–2025.
+- **Look windows (ruled 2026-10-21: every window counts).** Looks carry `window: "dev" | "diag"` as a label;
+  K = `looks_total()` counts every row (112). The dev-only count proposed first (48) was rejected in favour of
+  the conservative one.
 - **Counting rule.** n = configurations read (strategy cell × execution, or statistic × instrument × window).
   Splits of one configuration (years, sub-periods, cost levels, legs, the Yahoo-vs-spliced data comparison) are
   part of its look. Reversal structure = 5 lags + 3 VRs + 3 leg statistics = 11 per symbol and window.
 - **`moc` on `diag`** is `same_close`: `diag` has no 15:45 snapshot. It is an optimistic bound for a 15:45 decision
   and is labelled so.
-- **Missing crosses in the spliced frames** (`load_long` keeps them NaN from 2016) are replaced inside the script
-  by the session's RTH 5Min open / close, exactly as `load_market` does for the engine, and listed in report §0.
+- **Missing crosses in the spliced frames** were replaced inside the script for the run (exactly as
+  `load_market`), and listed in report §0. After the ruling the fill moved into `load_long` itself (45b3fb9); the
+  frames are identical.
   They match SPEC §1's list: SPY 2019-08-12, 2023-06-05; QQQ 2020-03-16; IWM five; DIA three.
 - **`diag` costs**: spread + slippage at the curve, borrow 0.4 %/yr, DTB3 cash (the vintage has it from 1993); no
   SEC/TAF (the fee table starts 2015-02-14).
@@ -99,10 +100,10 @@ deferred.
 
 ## Deferred / open
 
-- Look windows and the counting rule: the user's ruling (§11).
+- Look windows: ruled (every window counts, K 112).
 - `looked`'s `window` is asserted by the caller. Nothing checks that a `"diag"` look reads only rows before
   DEV_START. It is correct in this script, by inspection and by review. A row-range check belongs with U6's
   runner.
-- Proposal: move the counted missing-cross fallback into `load_long` itself (U8 warm-up will hit the same NaNs).
+- Missing-cross fallback in `load_long`: done (45b3fb9).
 - U3 deferral (diag guard protects `"alpaca"` only) respected: every `diag` market here is built by `diag_market`
   from a `load_long` / Yahoo frame tagged `attrs["source"] = "diag"`.

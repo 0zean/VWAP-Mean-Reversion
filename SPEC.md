@@ -31,7 +31,8 @@ fallback close is the last 5Min bar's close, 25–35 minutes early. Each use is 
 in `Result.fallbacks`; a missing price with no fallback raises. `close_fallback_end` records when that bar ended; a
 `moc` fill at a fallback that ended by 15:45 is a price the decision already saw and is counted separately as
 `fallbacks["close_seen_at_decision"]` (1 session per SPY / IWM / DIA: 2019-08-12). A registered `moc` run reports
-that count; it is not silently treated as an ordinary fill.
+that count; it is not silently treated as an ordinary fill. The same fallback (`data.bars.rth_fallback`) fills these
+sessions in `secondary.load_long` (diagnostics and warm-up), listed in its splice report's `fallback_sessions`.
 
 **diag guard (sticky).** A frame tagged diag (`attrs` or `is_diag`) cannot be passed as `"alpaca"` or `"synthetic"`;
 a frame rebuilt from columns loses `attrs["source"]` and cannot be passed as `"alpaca"`; `run` refuses
