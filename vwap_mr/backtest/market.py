@@ -85,7 +85,7 @@ def load_market(symbol: str, start, end, *, vintage: str, with_snapshot: bool = 
     """SPEC.md §1: 1DayAuction (adjusted, with raw prints and dividends) × 1DayPrint volume, the RTH 5Min open / close
     as the counted fallback for a missing cross, VIX and DTB3, and the vintage's calendar. A session without
     consolidated volume raises."""
-    from vwap_mr.data.bars import load_bars
+    from vwap_mr.data.bars import load_bars, rth_fallback
     from vwap_mr.data.calendar import get_calendar
     from vwap_mr.data.exo import load_series
     from vwap_mr.data.store import vintage_dir
@@ -99,29 +99,15 @@ def load_market(symbol: str, start, end, *, vintage: str, with_snapshot: bool = 
     sessions["volume"] = vol
     gaps = auc.index[(auc["open_raw"].isna() | auc["close_raw"].isna()).to_numpy()]
     if len(gaps):
-        sessions["open_fallback_raw"] = np.nan
-        sessions["close_fallback_raw"] = np.nan
-        sessions["close_fallback_end"] = pd.Series(
-            pd.NaT, index=sessions.index, dtype=f"datetime64[ns, {NY_TZ}]"
-        )
+        fb = rth_fallback(symbol, gaps, vintage=vintage, **kw)
+        for col in fb.columns:
+            sessions[col] = fb[col].reindex(sessions.index)
         for d in gaps:
-            # raw 5Min of the session itself, not 1DayRTH: that drops a session whose last bar is missing, which is
-            # exactly when a cross can be missing too (2019-08-12: no SIP trades 15:35-16:00 for SPY / IWM / DIA)
-            day = d.tz_localize(None)
-            bars = load_bars(
-                symbol, "5Min", day, day + pd.Timedelta(days=1), vintage=vintage, adjustment="raw", **kw
-            )
-            if bars.empty:
+            if np.isnan(fb.at[d, "close_fallback_raw"]):
                 continue
-            sessions.loc[d, ["open_fallback_raw", "close_fallback_raw"]] = [
-                bars["open"].iloc[0],
-                bars["close"].iloc[-1],
-            ]
-            last_end = bars.index[-1] + pd.Timedelta(minutes=5)
-            sessions.loc[d, "close_fallback_end"] = last_end
-            print(f"[MARKET] {symbol} {day.date()}: cross missing (open {np.isnan(auc.loc[d, 'open_raw'])}, close "
-                  f"{np.isnan(auc.loc[d, 'close_raw'])}); RTH 5Min fallback: first bar {bars.index[0].time()}, last "
-                  f"bar ends {last_end.time()}")  # fmt: skip
+            print(f"[MARKET] {symbol} {d.date()}: cross missing (open {np.isnan(auc.loc[d, 'open_raw'])}, close "
+                  f"{np.isnan(auc.loc[d, 'close_raw'])}); RTH 5Min fallback: last bar ends "
+                  f"{fb.at[d, 'close_fallback_end'].time()}")  # fmt: skip
         # strategies see the counted fallback prints too (adjusted with the session's factor), never a NaN hole
         for side in ("open", "close"):
             miss = sessions[side].isna()

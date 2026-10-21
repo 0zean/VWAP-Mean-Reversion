@@ -13,8 +13,8 @@ looks are the wider count of what was examined, including what never became a tr
 
 Windows (U5): each row names the sample it read, `"dev"` (anything touching the development window
 2016-01-04 → 2025-12-31; a row without the field is a dev row, as the seed is) or `"diag"` (the secondary history
-before DEV_START only). K = `looks_total()` counts dev rows, since the Bonferroni bound guards development-window
-tests; `looks_total(window=None)` counts every row, and reports print both.
+before DEV_START only). The label is descriptive: K = `looks_total()` counts **every** row in every window (user
+ruling 2026-10-21, the conservative count); `looks_total(window="dev")` gives the development-window share.
 """
 
 import json
@@ -84,8 +84,8 @@ def looks(path: Path = LOOKS_PATH) -> list[dict]:
     return out
 
 
-def looks_total(path: Path = LOOKS_PATH, window: str | None = "dev") -> int:
-    """K: the configurations examined so far on `window` (None: every window)."""
+def looks_total(path: Path = LOOKS_PATH, window: str | None = None) -> int:
+    """K: the configurations examined so far, in every window (or only on `window`)."""
     return int(sum(int(r["n"]) for r in looks(path) if window is None or r.get("window", "dev") == window))
 
 

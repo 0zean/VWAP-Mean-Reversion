@@ -216,11 +216,11 @@ def test_looked_records_before_computing(tmp_path):
     assert len(seen) == 1  # nothing was computed for the refused look
 
 
-def test_looks_total_counts_dev_by_default(tmp_path):
+def test_looks_total_counts_every_window_by_default(tmp_path):
     path = tmp_path / "looks.jsonl"
     path.write_text(json.dumps({"at": "x", "label": "seed", "n": 1, "note": "", "git_sha": "0" * 40}) + "\n")
     record_look("a", 5, path=path, window="dev")
     record_look("b", 7, path=path, window="diag")
-    assert looks_total(path) == 6
+    assert looks_total(path) == 13
+    assert looks_total(path, window="dev") == 6  # the seed row has no window: dev
     assert looks_total(path, window="diag") == 7
-    assert looks_total(path, window=None) == 13
