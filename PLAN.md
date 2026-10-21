@@ -696,7 +696,8 @@ cost curve, splits, verdict).
 **Reviewer focus.** Expected magnitude vs U5's tables (no inflation); the headline fill is the one U2 showed
 executable; the `moc` variant present only if §9.2/§9.3 allow it.
 
-**Cost.** 1 session. **Depends on.** U5, §9.2. **Status.** not started.
+**Cost.** 1 session. **Depends on.** U5, §9.2. **Status.** done on `unit/06-h1` (2d39c0a), not merged; 3/3
+done-when; **rejected (diagnostic)**; K 112 → 139; `results/reports/U06_H1.md`, `U06_status.md`.
 
 ---
 
@@ -998,7 +999,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U3 | backtest, costs, account; SPEC §1–§5 | done, merged | 86 tests; vectorized = loop ≤ 1e-14 on 4 × 2,514 sessions; `margin_30k` registered; no P&L read |
 | U4 | statistics toolkit; SPEC §6 | done, merged | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman criterion amended (crossing-lag median 262 on the causal track) |
 | U5 | reproduce and diagnose | done, merged | K = 112 (every window; 48 dev rows); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
-| U6 | H1 existence | not started | |
+| U6 | H1 existence | done, not merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
 | U7 | H2 persistence | not started | P(μ_T > 0) = |
 | U8 | state estimators + noise study | not started | |
 | U9 | regime models + detection study | not started | |
@@ -1009,12 +1010,38 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U14 | intraday session-VWAP family | gated | |
 | U15 | ML conditioning overlay | gated | |
 
-Looks ledger K = 112, every window counted (§11 ruling 2026-10-21): 48 development-window rows (1 seed + 47 from
-U5) and 64 `diag`-only. Trials counted = 0. Holdout accesses = 0.
+Looks ledger K = 139, every window counted (§11 ruling 2026-10-21): 75 development-window (1 seed + 47 from U5 + 27
+from U6's H1 run) and 64 `diag`-only. Trials counted = 27 (H1: 1 headline, 7 variants, 19 splits). Holdout
+accesses = 0.
 
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-21 — U6 H1 registration and existence test. Branch `unit/06-h1` @ 2d39c0a (spec registered at 138a7b2).
+  Done-when: 3/3 ticked (`results/reports/U06_status.md`, report `U06_H1.md`).
+  - Looks: K was 112, is 139 (one dev row, n 27). Trials: 27 ledger rows.
+  - Reviewer (run before the registered run, because a spec runs once): BREAKING 0 / SEVERE 0 / MINOR 6 (fixed 6).
+  - **Verdict: rejected (diagnostic).**
+    - R₀ on SPY: −0.23 bp/day net excess at 1.0 bp, p 0.575, 90 % interval [−2.49, +2.04].
+    - Gross +0.73 bp/day (2.7 bp per round trip); break-even ≈ 0.1 bp.
+    - Coherence 6/16.
+    - The interval's upper end lies below U5's expected 2.3 bp/day; it does not exclude the 0.7–1.4 ex-crisis
+      reference.
+    - The long-only variant's +2.40 bp/day is beta 0.52 (alpha −0.8 %/yr), not evidence.
+  - Decisions inside the unit:
+    - "promising" needs p < 0.10 **and** lower90 > 0 (§6.2 states them as one; the bootstrap can split them by one
+      order statistic);
+    - the RTH-volume variant adds the closing-cross size (§8.1's wording; applies U1's proposal to the variant);
+    - the session-VWAP variant keeps the headline's 1DayPrint weights (one input changed per variant);
+    - the `moc` variant is not built (§9.2 / §9.3 at their defaults);
+    - U5's deferred row-range check is now `looks.check_window`, enforced by the runner.
+  - Open questions:
+    - merge `unit/06-h1`;
+    - the §6.2 routing after "rejected": U7 (H2) on the headline stream as registered, then H3 and H4 on `diag`
+      with the vol baseline only as diagnostics, and a null programme report — or stop at the null.
+  - Next: U7, if the routing is accepted. U2 (live plumbing) is still not started, and the forward test it feeds is
+    moot under a null.
 
 - **2026-10-21 — U5 rulings (user) and merge.** `unit/05-diagnose` merged into `dev` (7ac429c).
   - **Look counting: every window counts in K** (the conservative option of the proposal below). K = 112.
