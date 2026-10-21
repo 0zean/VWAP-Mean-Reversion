@@ -796,7 +796,9 @@ series for delay and false-alarm rate, with configurations frozen before market 
 **Reviewer focus.** Smoothed vs filtered vs predicted; label switching across refits; EM seeds; the first sessions
 of the `diag` warm-up (no model yet) handled as "no gate" and counted; the NIG prior not centred on reversion.
 
-**Cost.** 1½–2 sessions. **Depends on.** U8. **Status.** not started.
+**Cost.** 1½–2 sessions. **Depends on.** U8. **Status.** done on `unit/09-regime` (2ac613c, stacked on
+`unit/08-estimators`), not merged; 2/2 done-when; R2 beats B4 on synthetic regimes but invents regimes without them;
+R1 ≈ B1; R3 conservative; `results/reports/U09_detection.md`, `U09_status.md`.
 
 ---
 
@@ -1005,7 +1007,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U6 | H1 existence | done, merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
 | U7 | H2 persistence | done, merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
 | U8 | state estimators + noise study | done, not merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
-| U9 | regime models + detection study | not started | |
+| U9 | regime models + detection study | done, not merged | synthetic: R2 Youden J 0.63–0.67 vs B4 0.30–0.53, but 40 % 'fast' calls on a no-regime null; R1 J ≈ B1; R3 catches 21 % of σ doublings, ~0 false alarms; decision < 1 ms, refit 0.2 s / 21 sessions; 252 tests |
 | U10 | H3 predictability | not started | |
 | U11 | H4 blend | not started | |
 | U12 | holdout read, verdict, registry | not started | |
@@ -1013,13 +1015,38 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U14 | intraday session-VWAP family | gated | |
 | U15 | ML conditioning overlay | gated | |
 
-Looks ledger K = 153, every window counted (§11 ruling 2026-10-21): 87 development-window (1 seed + 47 from U5 + 27
-from U6's H1 run + 12 from U7) and 66 `diag`-only. Trials counted = 27 (H1: 1 headline, 7 variants, 19 splits). Holdout
+Looks ledger K = 154, every window counted (§11 ruling 2026-10-21): 87 development-window (1 seed + 47 from U5 + 27
+from U6's H1 run + 12 from U7) and 67 `diag`-only (+1 from U9's NIG prior). Trials counted = 27 (H1: 1 headline, 7 variants, 19 splits). Holdout
 accesses = 0.
 
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-21 — U9 causal regime models and detection study. Branch `unit/09-regime` @ 2ac613c (stacked on
+  `unit/08-estimators`). Done-when: 2/2 ticked (`results/reports/U09_status.md`, report `U09_detection.md`).
+  - Looks: K was 153, is 154 (one `diag` look: R3's NIG prior).
+  - Reviewer: BREAKING 0 / SEVERE 2 / MINOR 7 (fixed 9). The SEVEREs: metrics that could not tell a stuck signal
+    from a detector, and a NaN look-ahead in the refit loop.
+  - Findings (synthetic):
+    - R2 MS-AR(1) Youden J 0.63–0.67 against rolling-φ B4's 0.30–0.53. On a constant-φ null R2 calls "fast"
+      40 % of the time, with 78 % degenerate refits.
+    - R1 HMM ≈ trailing-σ B1, and arbitrary on regime-free data.
+    - R3 BOCPD catches 21 % of σ doublings within 21 sessions, with ~0 false alarms.
+  - Decisions inside the unit:
+    - R2 in the intercept form (`MarkovRegression` on the lagged d*) instead of `MarkovAutoregression`'s
+      mean-adjusted form;
+    - R3's change signal is P(r_t ≤ 5), because P(r_t = 0) ≡ 1/λ;
+    - "hazard averaged" = averaging the outputs of one run per λ;
+    - degenerate refits are flagged (ergodic mass < 10 % or A[i, i] < 0.5);
+    - the regime causality tests run on raw-close returns;
+    - R4 is not built (optional).
+  - Open questions:
+    - the merge order: `unit/08-estimators`, then `unit/09-regime`;
+    - E2 in the H3 headline program (U8);
+    - whether to amend the §6.2 routing so H3 / H4 test R2 on the development window as diagnostics (the user's
+      "improvements" question). Under the routing, H3 is B1 on `diag`.
+  - Next: U10, after the routing decision.
 
 - 2026-10-21 — U8 state estimators and noise study. Branch `unit/08-estimators` @ 9802a06. Done-when: 3/3 ticked
   (`results/reports/U08_status.md`, report `U08_estimators.md`, draft `specs/H3_regime_gates.yaml`).
