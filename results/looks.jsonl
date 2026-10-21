@@ -23,3 +23,4 @@
 {"at": "2026-10-21T02:34:17.858182+00:00", "git_sha": "2745dd459eceffa47ff3062016287d2c1faa8ab1", "label": "U7 dev cross-instrument coherence (QQQ, IWM, DIA by year)", "n": 3, "note": "", "window": "dev"}
 {"at": "2026-10-21T03:54:04.196040+00:00", "git_sha": "936b831565cb78031fb7502649fc40d20d8a4e24", "label": "U9 R3 NIG prior from diag 1993-2011 (mean, var of standardized SPY returns)", "n": 1, "note": "", "window": "diag"}
 {"at": "2026-10-21T05:40:44.912077+00:00", "git_sha": "2e77cfb98967f6fc596d34036a2882ba62fd17a3", "label": "U10 run H3_regime_gates@bd6e887c429a", "n": 16, "note": "H3_regime_gates: 4 headline gates (Holm), 12 variant gates", "window": "dev"}
+{"at": "2026-10-21T07:36:17.110699+00:00", "git_sha": "798ce87218646bc7c63fc31386fcce1b91d0d3ec", "label": "U11 run H4_blend@798ce8721864", "n": 12, "note": "H4_blend: 1 headline + 8 variant blends; references ['DC55', 'TSMOM', 'vol_managed']", "window": "dev"}

@@ -851,7 +851,7 @@ to each component.
 the vol-managed core's exposure cap.
 
 **Cost.** 1 session. **Depends on.** U10 (or U6 + U9 if H3 is skipped under §6.2's "rejected" path). **Status.**
-not started.
+done (branch `unit/11-h4`, not merged); diagnostic null, ΔSharpe +0.15, p 0.15 (`results/reports/U11_status.md`).
 
 ---
 
@@ -1017,19 +1017,51 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U8 | state estimators + noise study | done, merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
 | U9 | regime models + detection study | done, merged | synthetic: R2 Youden J 0.63–0.67 vs B4 0.30–0.53, but 40 % 'fast' calls on a no-regime null; R1 J ≈ B1; R3 catches 21 % of σ doublings, ~0 false alarms; decision < 1 ms, refit 0.2 s / 21 sessions; 252 tests |
 | U10 | H3 predictability | done, merged | **diagnostic null, 0 of 4 headline gates pass** (Holm): B1 Δμ +2.86 bp/day p 0.19 (Holm 0.74), π 0.398/0.40, 42 episodes; B4 −2.28 p 0.78, π 0.519/0.50, 47; B5 −9.71 p 0.97, π 0.893 (rep.), 25; R2 +2.65 p 0.19 (Holm 0.74), π 0.458 (rep.), 85; every p·K 1.0; MDE ≈ 11.4–11.6; R2 φ separation 0.028, 103/121 refits swap-flagged (variance regimes, not φ); 269 tests |
-| U11 | H4 blend | not started | |
+| U11 | H4 blend | done, not merged | **null (diagnostic)**: B1 blend vs static 50/50 Sharpe 0.39 vs 0.25, ΔSharpe +0.15, p 0.150 (p·K 1.0), ρ 0.84, floor ✓; +0.13 of it vs the matched-mean static (timing, not tilt); variants +0.10…+0.19 except B6_diff −0.17; vol-managed buy-and-hold Sharpe 0.82, TSMOM 0.20, R₀ −0.04; MR–TF corr −0.30; 282 tests |
 | U12 | holdout read, verdict, registry | not started | |
 | U13 | forward test | not started | |
 | U14 | intraday session-VWAP family | gated | |
 | U15 | ML conditioning overlay | gated | |
 
-Looks ledger K = 170, every window counted (§11 ruling 2026-10-21): 103 development-window (1 seed + 47 from U5 + 27
-from U6's H1 run + 12 from U7 + 16 from U10's H3 run) and 67 `diag`-only (+1 from U9's NIG prior). Trials counted = 43 (H1: 1 headline, 7 variants, 19 splits; H3: 4 headlines, 12 variants). Holdout
+Looks ledger K = 182, every window counted (§11 ruling 2026-10-21): 115 development-window (1 seed + 47 from U5 + 27
+from U6's H1 run + 12 from U7 + 16 from U10's H3 run + 12 from U11's H4 run) and 67 `diag`-only (+1 from U9's NIG prior). Trials counted = 52 (H1: 1 headline, 7 variants, 19 splits; H3: 4 headlines, 12 variants; H4: 1 headline, 8 variants). Holdout
 accesses = 0.
 
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-21 — U11 trend region and H4 blend. Branch `unit/11-h4` @ 798ce87 (spec registered and run at that SHA).
+  Done-when: 2/2 ticked (`results/reports/U11_status.md`, report `U11_blend.md`).
+  - Looks: K was 170, is 182 (one dev row, n 12: 9 configurations + TSMOM, DC55 and the vol-managed buy-and-hold
+    alone). Trials: 52 ledger rows (9 new).
+  - Reviewer (run before the registered run): BREAKING 0 / SEVERE 1 / MINOR 8 (fixed 6, deferred / noted 3).
+    - The SEVERE: the 50/50 static carries a static tilt, because E[w] = 0.45. The test is unchanged; a
+      matched-mean static split is now reported for every configuration.
+  - **Verdict: null (diagnostic).**
+    - B1-weighted blend vs static 50/50: Sharpe 0.39 vs 0.25, ΔSharpe +0.15 (p 0.15, lower 90 % −0.04).
+    - Against the matched-mean static the ΔSharpe is +0.13, so it is mostly timing.
+    - Variants run +0.10 … +0.19 (p ≥ 0.096), except B6_diff at −0.17, which fails the floor.
+  - **The vol-managed buy-and-hold (Sharpe 0.82) beats every blend.** TSMOM alone has 0.20 and R₀ −0.04. R₀–TSMOM
+    correlation is −0.30.
+  - Decisions inside the unit:
+    - trend inputs come from the spliced long series (only dev-window P&L is read);
+    - the weight is at row t, the components' decision;
+    - each configuration is paired with its own static (same TF and vol scale);
+    - R2 enters as a continuous P;
+    - B6_diff's first 62 sessions use w = 0.5;
+    - the floor is on net returns, as static − 0.1·|static|;
+    - `power` for paired_sharpe carries `rho` and `mde_delta_sharpe`.
+  - Noted:
+    - §6.5 says "≤ 6" variants and lists 7; the spec runs 8 (+ Donchian-55, §6.5's TF variant), within §6.7's 8;
+    - `vol_target_10` scales by SPY's σ̂ (H1's convention), not the blend's;
+    - the harness is now 5,872 non-blank lines (target 5,000).
+  - Open questions:
+    - merge `unit/11-h4`;
+    - what U12's registry adopts under three diagnostic nulls (nothing, the B1 blend as a diagnostic forward
+      candidate, and/or the vol-managed buy-and-hold as the forward reference);
+    - U2 / U13 wait on the Alpaca upgrade.
+  - Next: U12, when the user starts it.
 
 - **2026-10-21 — U10 merged; amendment: H4's blend weight is B1 (user decisions).**
   - Merge: `unit/10-h3` into `dev` (e59c52f). The done-gate passes on the merged tree.
