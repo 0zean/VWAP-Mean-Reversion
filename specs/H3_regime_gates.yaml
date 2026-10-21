@@ -1,6 +1,7 @@
 # DRAFT (U8). Not a registered spec: it lacks §8.7's required fields and the runner refuses it.
 id: H3_regime_gates
-status: draft — not registered; U9 adds R1–R4, U10 completes and registers it
+status: draft — not registered; U8 states and U9 regime models frozen; U10 completes
+  and registers it
 routing: 'PLAN §11 2026-10-21: under §6.2 ''rejected'', the registered H3 runs on
   diag with the vol baseline only, as a diagnostic; this table is the frozen configuration
   of every state variable'
@@ -88,3 +89,61 @@ state_configuration:
     q05: 0.6127894580411913
     q95: 0.7884755657141984
   trailing_quantile_window: 504
+regime_configuration:
+  R1:
+    model: 2-state Gaussian HMM (switching mean, variance)
+    input: returns / trailing-252 σ (t−252…t−1)
+    fit_window: 1008
+    refit_every: 21
+    order: by σ; regime 1 = high σ
+    output: one-step-ahead P(high-σ at t+1 | ≤ t)
+    favourable: P > 0.5
+    pi: reported, not fixed (arbitrary when a refit is degenerate)
+  R2:
+    model: MS-AR(1), intercept form (switching c, φ, σ²)
+    input: d*_t (§8.1, n = 5)
+    fit_window: 1008
+    refit_every: 21
+    order: by φ; regime 0 = smaller φ = fast reversion
+    swap_flag: '|φ₁ − φ₀| < 0.05'
+    output: one-step-ahead P(fast at t+1 | ≤ t)
+    favourable: P > 0.5
+    pi: reported, not fixed
+    random_walk_phi_126:
+      window: 126
+      mean: 0.7059145678476755
+      sd: 0.05480026751628675
+      q05: 0.6092228482163446
+      q95: 0.7891915044010612
+    random_walk_r2_phi_pairs:
+    - - 0.6331231890207236
+      - 0.6531226009680899
+    - - 0.6133111299707203
+      - 0.7485606473918466
+    - - 0.39071503307121913
+      - 0.7619017214381908
+    - - 0.6458285012219483
+      - 0.6949883121899287
+    - - 0.6006816905034809
+      - 0.6788892823837224
+    - - 0.6511363209803301
+      - 0.6788653053722058
+  R3:
+    model: BOCPD, Normal–Inverse-Gamma
+    input: returns / trailing-252 σ
+    hazards:
+    - 63
+    - 126
+    - 252
+    hazard_averaging: equal-weight average of the outputs of one run per λ
+    prior:
+      mu0: 0.03940936058138535
+      kappa0: 1.0
+      alpha0: 3.0
+      beta0: 2.362069868704949
+      source: SPY diag 1993-2011
+    prune: log-prob < max − 10
+    favourable: E[run length] > 21 and P(r_t ≤ 5) < 0.2
+    pi: reported, not fixed
+  R4: 'optional, not built (§7 U9: only if time remains after R1–R3)'
+  no_gate_before_first_fit: NaN (counted by U10, never filled)

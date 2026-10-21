@@ -209,3 +209,102 @@ def rw_phi_null(n_sessions: int = 5000, window: int = 126, draws: int = 50, seed
     v = np.concatenate(phis)
     return {"window": window, "mean": float(v.mean()), "sd": float(v.std(ddof=1)),
             "q05": float(np.quantile(v, 0.05)), "q95": float(np.quantile(v, 0.95))}  # fmt: skip
+
+
+# ── U9: regime detection on synthetic switching series ──────────────────────
+
+
+def ms_series(n: int, dur: float, rng: np.random.Generator, *, kind: str) -> tuple[np.ndarray, np.ndarray]:
+    """A two-regime Markov-switching series with mean regime duration `dur` (stay probability 1 − 1/dur) and the
+    indicator of the target regime: kind "phi" is AR(1) with φ ∈ {0.3 (target: fast reversion), 0.9}, unit
+    innovations; kind "sigma" is iid N(0, σ²) with σ ∈ {1, 2 (target: high σ)}."""
+    s = np.empty(n, dtype=int)
+    s[0] = rng.integers(2)
+    flips = rng.random(n) < 1 / dur
+    for t in range(1, n):
+        s[t] = 1 - s[t - 1] if flips[t] else s[t - 1]
+    e = rng.standard_normal(n)
+    if kind == "phi":
+        phi = np.where(s == 0, 0.3, 0.9)
+        x = np.empty(n)
+        x[0] = e[0]
+        for t in range(1, n):
+            x[t] = phi[t] * x[t - 1] + e[t]
+        return x, s == 0
+    if kind == "sigma":
+        return e * np.where(s == 1, 2.0, 1.0), s == 1
+    raise ValueError(kind)
+
+
+def detection_metrics(p_next: np.ndarray, target: np.ndarray, threshold: float = 0.5) -> dict:
+    """p_next[t] predicts target[t + 1]; the signal at t + 1 is p_next[t] > threshold. Time-in-state metrics (these
+    separate a detector from a stuck or random signal): TPR = share of target-on sessions signalled, FPR = share of
+    target-off sessions signalled, Youden J = TPR − FPR, Brier = mean (p − target)². Delay: over spells that start
+    with the signal **off** on the session before the switch, sessions to the first signal inside the spell (spells
+    that end first are missed); spells entered with the signal already on are counted separately (`already_on`).
+    On a null (no target sessions) only `share_on` and FPR are defined."""
+    p = np.asarray(p_next, dtype=float)[:-1]
+    y = np.asarray(target, dtype=bool)[1:]
+    ok = np.isfinite(p)
+    p, y = p[ok], y[ok]
+    sig = p > threshold
+    delays, missed, already = [], 0, 0
+    starts = np.flatnonzero(y & ~np.r_[True, y[:-1]])
+    for s0 in starts:
+        if sig[s0 - 1]:
+            already += 1
+            continue
+        k = s0
+        while k < len(y) and y[k]:
+            if sig[k]:
+                delays.append(k - s0)
+                break
+            k += 1
+        else:
+            missed += 1
+    tpr = float(sig[y].mean()) if y.any() else float("nan")
+    fpr = float(sig[~y].mean()) if (~y).any() else float("nan")
+    onsets = sig & ~np.r_[False, sig[:-1]]
+    return {"n": len(y), "switches": len(starts), "already_on": already,
+            "delay_median": float(np.median(delays)) if delays else np.nan, "missed": missed, "tpr": tpr, "fpr": fpr,
+            "youden": tpr - fpr, "false_alarms_per_1000": float((onsets & ~y).sum() / len(y) * 1000),
+            "brier": float(np.mean((p - y) ** 2)) if y.any() else float("nan"), "share_on": float(sig.mean())}  # fmt: skip
+
+
+def baseline_prob(x: pd.Series, kind: str) -> pd.Series:
+    """0/1 'probabilities' of the target regime from the §6.4 baselines, stamped at t (predicting t + 1): kind "phi" is
+    B4 (rolling-126 AR(1) φ below its trailing-504 median → fast); kind "sigma" is B1 (rolling-21 σ in the top two
+    quintiles of its trailing 504 → high)."""
+    from vwap_mr.experiments.persistence import trailing_quantile
+
+    if kind == "phi":
+        q = trailing_quantile(ar1_phi(x, 126), 504)
+        return (q <= 0.5).astype(float).where(q.notna())
+    q = trailing_quantile(x.rolling(21).std(ddof=1), 504)
+    return (q > 0.6).astype(float).where(q.notna())
+
+
+def change_metrics(
+    p_recent: np.ndarray, regime_switch: np.ndarray, threshold: float = 0.5, horizon: int = 21
+) -> dict:
+    """For a change detector (R3): delay from each switch to the first p_recent > threshold within `horizon` sessions
+    (else missed); false alarms = onsets with no switch in the previous `horizon` sessions, per 1,000 sessions."""
+    p = np.asarray(p_recent, dtype=float)
+    ok = np.isfinite(p)
+    sig = (p > threshold) & ok
+    sw = np.flatnonzero(regime_switch & ok)
+    delays, missed = [], 0
+    for s0 in sw:
+        hit = np.flatnonzero(sig[s0 : s0 + horizon])
+        if len(hit):
+            delays.append(int(hit[0]))
+        else:
+            missed += 1
+    onsets = np.flatnonzero(sig & ~np.r_[False, sig[:-1]])
+    recent = np.zeros(len(p), bool)
+    for s0 in sw:
+        recent[s0 : s0 + horizon] = True
+    n = int(ok.sum())
+    return {"n": n, "switches": len(sw), "delay_median": float(np.median(delays)) if delays else np.nan,
+            "missed": missed, "false_alarms_per_1000": float((~recent[onsets]).sum() / n * 1000),
+            "share_on": float(sig[ok].mean())}  # fmt: skip
