@@ -164,18 +164,25 @@ def splice(raw: pd.DataFrame, auction: pd.DataFrame) -> tuple[pd.DataFrame, dict
 
 
 def load_spy_long(vintage: str, *, cache_root: Path = CACHE_DIR, http: Callable[..., str] = http_get):
-    """SPY daily from 1993-01-29 to HOLDOUT_START: diag (spliced) before DEV_START; from DEV_START the adjusted
-    `1DayAuction` open / close, `close_split` = raw closing cross, and `1DayPrint` volume.
+    """`load_long("SPY", ...)`: SPY from 1993-01-29."""
+    return load_long("SPY", vintage, cache_root=cache_root, http=http)
+
+
+def load_long(
+    symbol: str, vintage: str, *, cache_root: Path = CACHE_DIR, http: Callable[..., str] = http_get
+):
+    """`symbol` daily from its first Yahoo session to HOLDOUT_START: diag (spliced) before DEV_START; from DEV_START
+    the adjusted `1DayAuction` open / close, `close_split` = raw closing cross, and `1DayPrint` volume.
 
     For diagnostics and estimator warm-up only: the frame is tagged diag as a whole (`refuse_diag` refuses it) and
     row-wise (`is_diag`). Returns (frame, splice report)."""
     auction = load_bars(
-        "SPY", "1DayAuction", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root
+        symbol, "1DayAuction", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root
     )
-    volume = load_bars("SPY", "1DayPrint", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root)[
+    volume = load_bars(symbol, "1DayPrint", DEV_START, HOLDOUT_START, vintage=vintage, cache_root=cache_root)[
         "volume"
     ]
-    raw = load_yahoo("SPY", cache_root=cache_root, http=http)
+    raw = load_yahoo(symbol, cache_root=cache_root, http=http)
     diag, report = splice(raw, auction)
     report["volume_ratio_print_vs_yahoo_median"] = float(
         (volume / raw["volume"].reindex(volume.index)).median()
