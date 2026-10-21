@@ -851,7 +851,7 @@ to each component.
 the vol-managed core's exposure cap.
 
 **Cost.** 1 session. **Depends on.** U10 (or U6 + U9 if H3 is skipped under §6.2's "rejected" path). **Status.**
-done (branch `unit/11-h4`, not merged); diagnostic null, ΔSharpe +0.15, p 0.15 (`results/reports/U11_status.md`).
+done, merged; diagnostic null, ΔSharpe +0.15, p 0.15 (`results/reports/U11_status.md`).
 
 ---
 
@@ -865,6 +865,9 @@ registry for the forward test.
 Holm, the holdout slice as a robustness row, cost curve, account check); `specs/registry.yaml` (adopted
 configurations: spec SHA, code hash, cell hashes, freeze date, registered expectation with its 90 % interval,
 the registered BOCPD run length λ = 126 and the kill rule for U13, the H5 rule); README rewritten with the result.
+(Amended 2026-10-21, §11, user decision: the registry records **the B1-weighted blend (H4 headline, spec
+`H4_blend` @ 798ce87) as a diagnostic candidate** — labelled diagnostic, not adopted on evidence; its holdout slice
+is read in this unit's single batch with the registered configurations.)
 
 **Done when.**
 - [ ] Holdout accessed exactly once by research code (one audit line); the report says what the slice shows and
@@ -1017,7 +1020,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U8 | state estimators + noise study | done, merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
 | U9 | regime models + detection study | done, merged | synthetic: R2 Youden J 0.63–0.67 vs B4 0.30–0.53, but 40 % 'fast' calls on a no-regime null; R1 J ≈ B1; R3 catches 21 % of σ doublings, ~0 false alarms; decision < 1 ms, refit 0.2 s / 21 sessions; 252 tests |
 | U10 | H3 predictability | done, merged | **diagnostic null, 0 of 4 headline gates pass** (Holm): B1 Δμ +2.86 bp/day p 0.19 (Holm 0.74), π 0.398/0.40, 42 episodes; B4 −2.28 p 0.78, π 0.519/0.50, 47; B5 −9.71 p 0.97, π 0.893 (rep.), 25; R2 +2.65 p 0.19 (Holm 0.74), π 0.458 (rep.), 85; every p·K 1.0; MDE ≈ 11.4–11.6; R2 φ separation 0.028, 103/121 refits swap-flagged (variance regimes, not φ); 269 tests |
-| U11 | H4 blend | done, not merged | **null (diagnostic)**: B1 blend vs static 50/50 Sharpe 0.39 vs 0.25, ΔSharpe +0.15, p 0.150 (p·K 1.0), ρ 0.84, floor ✓; +0.13 of it vs the matched-mean static (timing, not tilt); variants +0.10…+0.19 except B6_diff −0.17; vol-managed buy-and-hold Sharpe 0.82, TSMOM 0.20, R₀ −0.04; MR–TF corr −0.30; 282 tests |
+| U11 | H4 blend | done, merged | **null (diagnostic)**: B1 blend vs static 50/50 Sharpe 0.39 vs 0.25, ΔSharpe +0.15, p 0.150 (p·K 1.0), ρ 0.84, floor ✓; +0.13 of it vs the matched-mean static (timing, not tilt); variants +0.10…+0.19 except B6_diff −0.17; vol-managed buy-and-hold Sharpe 0.82, TSMOM 0.20, R₀ −0.04; MR–TF corr −0.30; 282 tests |
 | U12 | holdout read, verdict, registry | not started | |
 | U13 | forward test | not started | |
 | U14 | intraday session-VWAP family | gated | |
@@ -1030,6 +1033,21 @@ accesses = 0.
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- **2026-10-21 — U11 merged; the B1 blend is the U12 registry's diagnostic candidate (user decisions).**
+  - Merge: `unit/11-h4` into `dev` (20328db).
+  - **Registry (U12 scope amended, §7 U12).** The B1-weighted MR / TSMOM blend, H4's headline configuration
+    (`specs/H4_blend.yaml` @ 798ce87: w_t ∈ {0.25, 0.75} from B1, κ 0.5, TSMOM {21, 63, 126, 252}, R₀, close →
+    next_open, 1.0 bp), is recorded as a **diagnostic candidate** for the forward test.
+  - Consequences that stand:
+    - The label is "diagnostic". H4 was a null (ΔSharpe +0.15, p 0.15), and B1 was chosen after U10 read it on the
+      same window, so nothing on 2016–2025 supports adopting it.
+    - Its holdout slice is read once, in U12's single audited batch.
+    - U12 still writes the registered expectation and its 90 % interval from the development window, which for
+      ΔSharpe is [−0.04, …) one-sided.
+    - The forward verdict (H5, §6.7) applies as written.
+    - Whether the vol-managed buy-and-hold is also registered, as the forward reference, is left to U12.
+  - Next: U12, when the user starts it. U2 / U13 still wait on the Alpaca upgrade.
 
 - 2026-10-21 — U11 trend region and H4 blend. Branch `unit/11-h4` @ 798ce87 (spec registered and run at that SHA).
   Done-when: 2/2 ticked (`results/reports/U11_status.md`, report `U11_blend.md`).
