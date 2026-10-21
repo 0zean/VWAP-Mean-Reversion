@@ -88,3 +88,37 @@ def gbm_daily(n_sessions: int, seed: int, **kw) -> tuple[pd.DataFrame, np.ndarra
     """`gbm_5min` aggregated to one bar per session (resample_daily); returns (daily, regime)."""
     bars, cal, regime = gbm_5min(n_sessions, seed, **kw)
     return resample_daily(bars, cal), regime
+
+
+def daily_market(symbol: str, start: str, end: str, seed: int, *, ar1: float = -0.05):
+    """A synthetic `Market` (source "synthetic") over weekdays [start, end] with every column the U6 runner reads:
+    raw opening / closing prints with AR(1) close-to-close returns and overnight gaps, quarterly dividends and the U1
+    adjustment factor, 1DayPrint-like volume, `rth_volume` and `rth_vwap`, VIX and DTB3 with their available_at
+    rules. For dry runs and tests: it carries no market information."""
+    from vwap_mr.backtest.market import Market
+    from vwap_mr.data.dividends import _frame, adjustment_factor
+    from vwap_mr.data.exo import Exo, available_at
+
+    rng = np.random.default_rng(seed)
+    days = pd.bdate_range(start, end)
+    n = len(days)
+    e = rng.standard_normal(n) * 0.01
+    r = np.empty(n)
+    r[0] = e[0]
+    for t in range(1, n):
+        r[t] = ar1 * r[t - 1] + e[t]
+    div = np.where(np.arange(n) % 63 == 62, 0.45, 0.0)
+    close = 100 * np.cumprod(1 + r)
+    opn = np.r_[100.0, close[:-1]] * np.exp(rng.normal(0, 0.003, n)) - div
+    idx = days.tz_localize(NY_TZ)
+    factor = adjustment_factor(pd.Series(close, index=idx), _frame(days[div > 0], div[div > 0])).to_numpy()
+    vol = rng.lognormal(18, 0.3, n)
+    s = pd.DataFrame({"open": opn * factor, "close": close * factor, "open_raw": opn, "close_raw": close,
+                      "dividend": div, "factor": factor, "volume": vol, "rth_volume": vol * rng.uniform(0.75, 0.95, n),
+                      "rth_vwap": (opn + close) / 2 * factor * np.exp(rng.normal(0, 0.001, n))}, index=idx)  # fmt: skip
+    vix = pd.DataFrame({"value": rng.uniform(10, 40, n)}, index=days)
+    vix["available_at"] = available_at("VIX", days)
+    rate_days = pd.bdate_range(end=days[-1], periods=n + 10)
+    dtb3 = pd.DataFrame({"value": rng.uniform(0.5, 5, n + 10)}, index=rate_days)
+    dtb3["available_at"] = available_at("DTB3", rate_days)
+    return Market(s, "synthetic", exo=Exo({"VIX": vix, "DTB3": dtb3}), symbol=symbol)

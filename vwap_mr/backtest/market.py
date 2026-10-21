@@ -81,10 +81,13 @@ class Market:
         return (days + lag).tz_localize(NY_TZ)
 
 
-def load_market(symbol: str, start, end, *, vintage: str, with_snapshot: bool = False, **kw) -> Market:
+def load_market(symbol: str, start, end, *, vintage: str, with_snapshot: bool = False, with_rth: bool = False,
+                **kw) -> Market:  # fmt: skip
     """SPEC.md §1: 1DayAuction (adjusted, with raw prints and dividends) × 1DayPrint volume, the RTH 5Min open / close
     as the counted fallback for a missing cross, VIX and DTB3, and the vintage's calendar. A session without
-    consolidated volume raises."""
+    consolidated volume raises. `with_rth` adds the U6 variant inputs: `rth_volume` (1DayRTH volume + the closing-cross
+    size) and `rth_vwap` (the session's own RTH VWAP, adjusted); a session missing either stays NaN and is logged
+    (the cell is flat over every window containing it; never filled)."""
     from vwap_mr.data.bars import load_bars, rth_fallback
     from vwap_mr.data.calendar import get_calendar
     from vwap_mr.data.exo import load_series
@@ -113,6 +116,15 @@ def load_market(symbol: str, start, end, *, vintage: str, with_snapshot: bool = 
             miss = sessions[side].isna()
             sessions.loc[miss, side] = (
                 sessions.loc[miss, f"{side}_fallback_raw"] * sessions.loc[miss, "factor"]
+            )
+    if with_rth:
+        rth = load_bars(symbol, "1DayRTH", start, end, vintage=vintage, **kw).reindex(sessions.index)
+        sessions["rth_volume"] = rth["volume"] + auc["close_size"]
+        sessions["rth_vwap"] = rth["vwap"]
+        gap = sessions.index[sessions[["rth_volume", "rth_vwap"]].isna().any(axis=1).to_numpy()]
+        if len(gap):
+            print(
+                f"[MARKET] {symbol}: no RTH volume + cross size or RTH VWAP for {[str(d.date()) for d in gap]}"
             )
     sessions.attrs["source"] = "alpaca"
     snap = load_bars(symbol, "snap1545", start, end, vintage=vintage, **kw) if with_snapshot else None

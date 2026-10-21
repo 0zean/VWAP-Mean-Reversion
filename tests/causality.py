@@ -18,8 +18,18 @@ from vwap_mr.config import DecisionTime
 from vwap_mr.data.dividends import adjustment_factor
 from vwap_mr.data.exo import Exo
 
-PRICE_COLUMNS = ("open", "close", "open_raw", "close_raw", "open_fallback_raw", "close_fallback_raw")
+PRICE_COLUMNS = (
+    "open",
+    "close",
+    "open_raw",
+    "close_raw",
+    "open_fallback_raw",
+    "close_fallback_raw",
+    "rth_vwap",
+)
 CLOSE_COLUMNS = ("close", "close_raw", "close_fallback_raw")
+VOLUME_COLUMNS = ("volume", "rth_volume")  # rth_volume: the U6 variant weight
+ADJUSTED_EXTRA = ("rth_vwap",)  # adjusted price levels not rebuilt from raw: rescaled with the factor
 
 
 def _exo_cut(market: Market, c: int, decision: DecisionTime, rng, drop: bool) -> Exo | None:
@@ -68,6 +78,10 @@ def _readjust(s: pd.DataFrame, known: int) -> None:
     divs = pd.DataFrame({"amount": head["dividend"].to_numpy()[ex]}, index=days[ex])
     factor = np.ones(len(s))
     factor[:known] = adjustment_factor(raw.iloc[:known], divs).to_numpy()
+    old = _factor(s)
+    for col in ADJUSTED_EXTRA:
+        if col in s:
+            s[col] = s[col].to_numpy() * factor / old
     for col in ("open", "close"):
         if col in s:
             s[col] = s[f"{col}_raw"].to_numpy() * factor
@@ -83,16 +97,20 @@ def perturb_after(market: Market, c: int, decision: DecisionTime, seed: int = 0)
     for col in PRICE_COLUMNS:
         if col in s:
             s.iloc[c + 1 :, s.columns.get_loc(col)] *= shock
-    s.iloc[c + 1 :, s.columns.get_loc("volume")] = rng.uniform(1e6, 1e8, k)
+    for col in VOLUME_COLUMNS:
+        if col in s:
+            s.iloc[c + 1 :, s.columns.get_loc(col)] = rng.uniform(1e6, 1e8, k)
     s.iloc[c + 1 :, s.columns.get_loc("dividend")] = np.where(
         rng.random(k) < 0.05, rng.uniform(0.2, 0.6, k), 0.0
     )
     if decision == DecisionTime.T1545:
         jolt = float(np.exp(rng.normal(0, 0.01)))
-        for col in CLOSE_COLUMNS:
+        for col in (*CLOSE_COLUMNS, *ADJUSTED_EXTRA):
             if col in s:
                 s.iloc[c, s.columns.get_loc(col)] *= jolt
-        s.iloc[c, s.columns.get_loc("volume")] = rng.uniform(1e6, 1e8)
+        for col in VOLUME_COLUMNS:
+            if col in s:
+                s.iloc[c, s.columns.get_loc(col)] = rng.uniform(1e6, 1e8)
     _readjust(s, len(s))
     snap = _rescale_snapshot(market.snapshot, market.sessions, s)
     if snap is not None:
@@ -121,7 +139,7 @@ def truncate_after(market: Market, c: int, decision: DecisionTime) -> Market:
     t = market.index[c]
     s = market.sessions.iloc[: c + 1].copy()
     if decision == DecisionTime.T1545:
-        for col in (*CLOSE_COLUMNS, "volume"):
+        for col in (*CLOSE_COLUMNS, *ADJUSTED_EXTRA, *VOLUME_COLUMNS):
             if col in s:
                 s.iloc[c, s.columns.get_loc(col)] = np.nan
         s.iloc[c, s.columns.get_loc("dividend")] = 0.0  # its factor step needs close_c, unknown at 15:45
