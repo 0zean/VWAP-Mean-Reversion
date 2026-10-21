@@ -717,7 +717,8 @@ coherence; the summary line. The tracker is wired as the U13 edge monitor.
 **Reviewer focus.** HAC in the break test; reading persistence off a sample that ends in a specific regime; the
 conditional tables not being used to change any F_S (those are fixed in §6.4).
 
-**Cost.** ½ session. **Depends on.** U6. **Status.** not started.
+**Cost.** ½ session. **Depends on.** U6. **Status.** done on `unit/07-persistence` (39b5698), not merged; 2/2
+done-when; P(μ_T > 0) = 0.447, no break, q_zero; K 139 → 153; `results/reports/U07_persistence.md`, `U07_status.md`.
 
 ---
 
@@ -1000,7 +1001,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U4 | statistics toolkit; SPEC §6 | done, merged | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman criterion amended (crossing-lag median 262 on the causal track) |
 | U5 | reproduce and diagnose | done, merged | K = 112 (every window; 48 dev rows); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
 | U6 | H1 existence | done, merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
-| U7 | H2 persistence | not started | P(μ_T > 0) = |
+| U7 | H2 persistence | done, not merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
 | U8 | state estimators + noise study | not started | |
 | U9 | regime models + detection study | not started | |
 | U10 | H3 predictability | not started | |
@@ -1010,13 +1011,35 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U14 | intraday session-VWAP family | gated | |
 | U15 | ML conditioning overlay | gated | |
 
-Looks ledger K = 139, every window counted (§11 ruling 2026-10-21): 75 development-window (1 seed + 47 from U5 + 27
-from U6's H1 run) and 64 `diag`-only. Trials counted = 27 (H1: 1 headline, 7 variants, 19 splits). Holdout
+Looks ledger K = 153, every window counted (§11 ruling 2026-10-21): 87 development-window (1 seed + 47 from U5 + 27
+from U6's H1 run + 12 from U7) and 66 `diag`-only. Trials counted = 27 (H1: 1 headline, 7 variants, 19 splits). Holdout
 accesses = 0.
 
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- 2026-10-21 — U7 H2 persistence. Branch `unit/07-persistence` @ 39b5698. Done-when: 2/2 ticked
+  (`results/reports/U07_status.md`, report `U07_persistence.md`).
+  - Looks: K was 139, is 153 (dev 12, diag 2).
+  - Reviewer (run before the real run): BREAKING 0 / SEVERE 0 / MINOR 7 (fixed 6, documented 1).
+  - Summary: last-5-year t 0.19; no Bai–Perron break; P(μ_T > 0) = 0.447 with q = 0 (every causal refit too).
+    There is no moving edge to track.
+  - `diag` at the historical cost schedule: the edge is the 2006–10 windows (+10 to +12 bp/day) and ≈ 0 or
+    negative elsewhere.
+  - The 2016–2025 conditional tables lean high-vol / high-VIX good and low-VIX bad (low-VIX tercile −2.8
+    [−5.0, −0.5]), ≈ 3 bp/day apart, far below any H3 MDE.
+  - Decisions inside the unit:
+    - the `diag` historical cost schedule is one tick / previous close ($1/16 to 2001-04-09, then $0.01; floor
+      1.0 bp; no fees), an assumption stated in `experiments/persistence.py`;
+    - no `diag` conditional tables (H3's sample).
+  - `EdgeMonitor` (live/monitor.py) is the U13 monitor.
+  - Open questions:
+    - merge `unit/07-persistence`;
+    - the scope of U8 / U9 / U10 under the routing: H3 on `diag` needs only B1 (the vol baseline), so U8 / U9
+      could be cut to that;
+    - whether U2 / U13 still run under a null.
+  - Next: U10-lite (H3 on `diag`, B1 only), if the user agrees to the cut. Otherwise U8.
 
 - **2026-10-21 — U6 rulings (user) and merge.** `unit/06-h1` merged into `dev` (5f150e0). **The §6.2 routing after
   "rejected" is followed:** U7 (H2) runs on the H1 headline stream as registered. H3 and H4 then run on `diag`
