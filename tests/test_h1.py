@@ -249,12 +249,34 @@ def test_report_refuses_a_run_whose_look_is_not_recorded(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "p, ok, want",
-    [(0.01, True, "confirmed"), (0.07, True, "promising"), (0.2, True, "rejected"), (0.01, False, "rejected"),
-     (0.0499, True, "confirmed"), (0.05, True, "promising"), (0.10, True, "rejected")],
+    "p, lo, ok, want",
+    [(0.01, 1.0, True, "confirmed"), (0.07, 0.5, True, "promising"), (0.2, -1.0, True, "rejected"),
+     (0.01, 1.0, False, "rejected"), (0.0499, 0.9, True, "confirmed"), (0.05, 0.4, True, "promising"),
+     (0.10, 0.1, True, "rejected"), (0.09, -0.0001, True, "rejected"), (0.1002, 0.0004, True, "rejected")],
 )  # fmt: skip
-def test_verdict_tiers(p, ok, want):
-    assert rn.verdict(p, ok, 0.05, 0.10) == want
+def test_verdict_tiers(p, lo, ok, want):
+    assert rn.verdict(p, lo, ok, 0.05, 0.10) == want
+
+
+def test_a_crash_before_the_end_leaves_no_trial_rows_and_the_spec_runnable(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("late failure")
+
+    monkeypatch.setattr(rn, "splits", boom)
+    with pytest.raises(RuntimeError, match="late failure"):
+        dry_run(tmp_path)
+    assert not (tmp_path / "ledger.jsonl").exists() and len(looks(tmp_path / "looks.jsonl")) == 1
+    monkeypatch.undo()
+    dry_run(tmp_path)  # not "already run"
+    assert len(looks(tmp_path / "looks.jsonl")) == 2
+
+
+def test_an_unregistered_run_refuses_the_real_results_paths(tmp_path):
+    with pytest.raises(rn.RunError, match="scratch"):
+        rn.run_spec(fast_spec(tmp_path), require_registered=False, loader=synthetic_loader)
+    with pytest.raises(rn.RunError, match="scratch"):
+        rn.run_spec(fast_spec(tmp_path), require_registered=False, loader=synthetic_loader,
+                    ledger_path=tmp_path / "l.jsonl", cells_dir=tmp_path / "c")  # fmt: skip
 
 
 def test_floors():

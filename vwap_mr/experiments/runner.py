@@ -6,8 +6,9 @@
 2. loads the headline and split instruments and checks every session lies in the look's window (dev);
 3. records the look (label `U6 run <id>@<sha12>`, n = configurations read), and only then computes;
 4. backtests each cell at the registered cost, writes `results/cells/<hash>/` (daily ledger, `result.json`) and one
-   ledger row per cell (§8.8), appended together at the end (a crash leaves no trial rows, only the look);
-5. returns the run record (also written to `results/cells/run_<id>_<sha12>.json`) for `report.render`.
+   ledger row per cell (§8.8), appended together after the record is written (a crash leaves only the look);
+5. writes the run record to `results/cells/run_<id>_<sha12>.json`, appends the ledger rows last, and returns the
+   record for `report.render`.
 
 Configurations in the look: the headline, each variant, each split instrument and each of the headline's 16 cells
 (the specification curve is read cell by cell). Years, vol / VIX bins, weekdays, sides, legs and cost levels are
@@ -140,11 +141,13 @@ def floors(head: dict, coherence: int, spec: Spec) -> dict:
     return out
 
 
-def verdict(p: float, floors_ok: bool, alpha: float, promising: float) -> str:
-    """§6.2: confirmed (p < alpha, floors, coherence), promising (p < promising), else rejected."""
-    if floors_ok and p < alpha:
+def verdict(p: float, lower90: float, floors_ok: bool, alpha: float, promising: float) -> str:
+    """§6.2: confirmed (p < alpha, floors, coherence), promising (p < promising and the one-sided 90 % lower bound
+    > 0, floors, coherence), else rejected. §6.2 writes the two promising conditions as one; the bootstrap's p and its
+    quantile bound can differ by one order statistic, so both are required (the conservative reading, U6 review)."""
+    if floors_ok and p < alpha and lower90 > 0:
         return "confirmed"
-    if floors_ok and p < promising:
+    if floors_ok and p < promising and lower90 > 0:
         return "promising"
     return "rejected"
 
@@ -192,6 +195,11 @@ def run_spec(
 ) -> dict:  # fmt: skip
     t0 = time.time()
     spec = load_spec(path)
+    if not require_registered and {Path(ledger_path), Path(looks_path), Path(cells_dir)} & {
+        LEDGER_PATH, LOOKS_PATH, CELLS_DIR}:  # fmt: skip
+        raise RunError(
+            "an unregistered run must write to scratch paths, never results/ (it would consume the spec)"
+        )
     if require_registered:
         spec_sha, git_sha = registered_sha(spec.path, repo), check_clean(repo)
     else:
@@ -266,9 +274,8 @@ def run_spec(
                             {"n": c.n, "b": c.b})  # fmt: skip
         coherence = sum(c["mean_bp_day"] > 0 for c in cell_out)
         fl = floors(head_stats, coherence, spec)
-        v = verdict(
-            head_stats["p_boot"], all(f["ok"] for f in fl.values()), test["alpha"], test["promising_alpha"]
-        )
+        v = verdict(head_stats["p_boot"], head_stats["lower90"], all(f["ok"] for f in fl.values()), test["alpha"],
+                    test["promising_alpha"])  # fmt: skip
 
         curve = []
         for bp in spec["cost"]["curve"]:
@@ -279,8 +286,9 @@ def run_spec(
             )
         m0 = next(c["mean_bp_day"] for c in curve if c["bp"] == min(spec["cost"]["curve"]))
         top = max(curve, key=lambda c: c["bp"])
-        slope = (m0 - top["mean_bp_day"]) / top["bp"] if top["bp"] > 0 else float("nan")
-        break_even = m0 / slope if m0 > 0 and slope > 0 else None
+        lo_bp = min(spec["cost"]["curve"])
+        slope = (m0 - top["mean_bp_day"]) / (top["bp"] - lo_bp) if top["bp"] > lo_bp else float("nan")
+        break_even = lo_bp + m0 / slope if m0 > 0 and slope > 0 else None
 
         var_out = []
         gaps = []
@@ -295,8 +303,6 @@ def run_spec(
             m = markets[sym]
             ir = run(m, head, costs=costs, cash_yield=tbill_yield(m))
             inst.append(cell("split", f"{head_name}@{sym}", ir, m, stream_stats(ir, test)))
-        ledger.append(rows)
-
         record = clean({
             "spec_id": spec.id, "spec_path": _rel(spec.path, repo), "spec_sha": spec_sha, "git_sha": git_sha,
             "code_hash": ch, "data_hash": dh, "vintage": spec["vintage"],
@@ -310,5 +316,8 @@ def run_spec(
         out = Path(cells_dir) / f"run_{spec.id}_{spec_sha[:12]}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(record, indent=1, sort_keys=True, allow_nan=False))
+        ledger.append(
+            rows
+        )  # last: a crash before this leaves the look but no trial rows (the spec can still run)
         record["record_path"] = out.as_posix()
         return record

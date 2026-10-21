@@ -88,9 +88,13 @@ def render(record: dict, looks_path=LOOKS_PATH) -> str:
          fl["coherence"]["ok"]],
     ])]  # fmt: skip
     t = spec["test"]
-    L += ["", (f"**Verdict: {record['verdict']}** (confirmed: one-sided p < {t['alpha']} with every floor; promising: "
-          f"p < {t['promising_alpha']} with every floor; otherwise rejected){' — diagnostic' if pw['diagnostic'] else ''}."
-          f" Expected {ex['magnitude_bp_day']} bp/day ({ex['source'].strip()})."), ""]  # fmt: skip
+    diag = " — diagnostic" if pw["diagnostic"] else ""
+    L += ["", (f"**Verdict: {record['verdict']}**{diag} (confirmed: one-sided p < {t['alpha']} with every floor; "
+               f"promising: p < {t['promising_alpha']} and a positive one-sided 90 % lower bound with every floor; "
+               f"otherwise rejected). Expected {ex['magnitude_bp_day']} bp/day; source: {ex['source'].strip()}"),
+          "", (f"The verdict uses the raw one-sided p: H1 is alone in its stage (k = 1, §6.2). p·K = p × {k} is the "
+               "looks-ledger bound over every configuration examined so far; it is printed, not used for the verdict."),
+          ""]  # fmt: skip
 
     L += ["## 2. Specification curve (the 16 cells of R₀, registered cost; sorted by mean)", ""]
     cells = sorted(record["cells"], key=lambda c: c["mean_bp_day"])
@@ -123,7 +127,7 @@ def render(record: dict, looks_path=LOOKS_PATH) -> str:
     if record["variant_input_gaps"]:
         L += ["", (f"Variant input gaps (RTH volume + cross size or RTH VWAP missing; those windows flat, counted): "
               f"{', '.join(record['variant_input_gaps'])}.")]  # fmt: skip
-    L += ["", "## 6. Split instruments (R₀ at the registered cost)", ""]
+    L += ["", "## 6. Split instruments (R₀ at the registered cost; reported, not used for the verdict)", ""]
     L += [_table(STREAM_HEADER, _stream_rows(record["instruments"], k)), ""]
 
     b = record["benchmark"]
@@ -132,5 +136,7 @@ def render(record: dict, looks_path=LOOKS_PATH) -> str:
           f"bp/day excess, Sharpe {_f(b['sharpe'])}."),
           (f"- Account `{h['account']['profile']}`: tradable {h['account']['tradable']}"
           f"{'; ' + '; '.join(h['account']['reasons']) if h['account']['reasons'] else ''}."),
-          f"- Fallbacks (headline): {h['fallbacks']}.", ""]  # fmt: skip
+          "- Counted cross fallbacks (RTH 5Min open / close for a missing auction print), by configuration: "
+          + "; ".join(f"{c['key']} {c['fallbacks']}" for c in [h, *record["variants"], *record["instruments"]])
+          + ".", ""]  # fmt: skip
     return "\n".join(L)
