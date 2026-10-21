@@ -717,7 +717,7 @@ coherence; the summary line. The tracker is wired as the U13 edge monitor.
 **Reviewer focus.** HAC in the break test; reading persistence off a sample that ends in a specific regime; the
 conditional tables not being used to change any F_S (those are fixed in §6.4).
 
-**Cost.** ½ session. **Depends on.** U6. **Status.** done on `unit/07-persistence` (39b5698), not merged; 2/2
+**Cost.** ½ session. **Depends on.** U6. **Status.** done, merged into `dev` (71a227f; branch @ 39b5698), not merged; 2/2
 done-when; P(μ_T > 0) = 0.447, no break, q_zero; K 139 → 153; `results/reports/U07_persistence.md`, `U07_status.md`.
 
 ---
@@ -1001,7 +1001,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U4 | statistics toolkit; SPEC §6 | done, merged | 118 tests; mean-test size 0.050 / 0.056 (iid / GARCH-t, 5,000 sims); Bai–Perron size 0.057 / 0.059; Kalman criterion amended (crossing-lag median 262 on the causal track) |
 | U5 | reproduce and diagnose | done, merged | K = 112 (every window; 48 dev rows); README reproduced 0.476 / 0.318 vs 0.468 / 0.314; edge is 2007–09; `diag` R₀ +2.3 bp/day net vs MDE 4.6 → H1 diagnostic |
 | U6 | H1 existence | done, merged | **rejected (diagnostic)**: R₀ −0.23 bp/day net @1.0 bp, p 0.575 (p·K 1.0), lower 90 % −1.95; floors: net −0.58 %/yr ✗, gross 2.7 bp/rt ✓, coherence 6/16 ✗; cost curve +0.04 / −0.04 / −0.23 / −0.57 bp/day at 0 / 0.3 / 1.0 / 2.3 bp; 196 tests |
-| U7 | H2 persistence | done, not merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
+| U7 | H2 persistence | done, merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
 | U8 | state estimators + noise study | not started | |
 | U9 | regime models + detection study | not started | |
 | U10 | H3 predictability | not started | |
@@ -1018,6 +1018,16 @@ accesses = 0.
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- **2026-10-21 — U7 merge and ruling (user).** `unit/07-persistence` merged into `dev` (71a227f).
+  - **U8 and U9 are built as planned**, not cut to a B1-only "U10-lite". The user's reason: the estimators and
+    regime models may improve on the vanilla rule.
+  - Protocol consequences, which stand regardless:
+    - U8 and U9 are synthetic-first and freeze their configurations before any market P&L is read (as written).
+    - The §6.2 routing still governs the registered H3 / H4 tests (on `diag`, as diagnostics) unless amended.
+    - Any "improvement" found later on the development window is a new hypothesis, read under K ≥ 153. It can be
+      confirmed only by the holdout read (U12) and the forward test (U13), not by the development window.
+  - Next: U8.
 
 - 2026-10-21 — U7 H2 persistence. Branch `unit/07-persistence` @ 39b5698. Done-when: 2/2 ticked
   (`results/reports/U07_status.md`, report `U07_persistence.md`).
