@@ -81,15 +81,27 @@ class Data:
     """Loaders: the frozen vintage, or seeded synthetic stand-ins (`--synthetic`)."""
 
     def __init__(self, vintage: str | None):
-        self.vintage, self.reports = vintage, {}
+        self.vintage, self.reports, self.fallbacks, self._dev = vintage, {}, {}, {}
 
     def long(self, sym: str) -> pd.DataFrame:
+        """`load_long`, with a missing cross from 2016 replaced by the session's RTH 5Min open / close exactly as
+        `load_market` does for the engine (counted in `fallbacks`, printed in the report)."""
         if self.vintage is None:
             return synthetic_frame(SYMBOLS.index(sym))
         from vwap_mr.data.secondary import load_long
 
         frame, rep = load_long(sym, self.vintage)
         self.reports[sym] = rep
+        s = self.dev_market(sym).sessions
+        gaps = frame.index[frame[["open", "close", "close_split"]].isna().any(axis=1).to_numpy()]
+        if not gaps.isin(s.index).all():
+            raise ValueError(f"{sym}: missing prints outside the Alpaca window: {list(gaps)}")
+        for d in gaps:
+            close_raw = (
+                s.at[d, "close_raw"] if np.isfinite(s.at[d, "close_raw"]) else s.at[d, "close_fallback_raw"]
+            )
+            frame.loc[d, ["open", "close", "close_split"]] = [s.at[d, "open"], s.at[d, "close"], close_raw]
+        self.fallbacks[sym] = [str(d.date()) for d in gaps]
         return frame
 
     def yahoo(self) -> pd.DataFrame:
@@ -115,7 +127,9 @@ class Data:
             s = pd.DataFrame({"open_raw": f["open"], "close_raw": f["close"], "dividend": 0.0, "open": f["open"],
                               "close": f["close"], "volume": f["volume"]})  # fmt: skip
             return Market(s, "synthetic", symbol=sym)
-        return load_market(sym, DEV_START, HOLDOUT_START, vintage=self.vintage)
+        if sym not in self._dev:
+            self._dev[sym] = load_market(sym, DEV_START, HOLDOUT_START, vintage=self.vintage)
+        return self._dev[sym]
 
 
 # ── formatting ──────────────────────────────────────────────────────────────
@@ -431,7 +445,9 @@ def main(argv=None) -> int:
     mag = magnitude_section(r0s, dev_n, r0s["n"])
     k1, k1_all = looks_total(a.looks), looks_total(a.looks, window=None)
     splice = "\n".join(f"- {s}: overlap {r['n_overlap']} sessions, adjusted-close corr {r['adjusted_close_corr']:.8f}, "
-                       f"1DayPrint / Yahoo volume median {r['volume_ratio_print_vs_yahoo_median']:.4f}"
+                       f"1DayPrint / Yahoo volume median {r['volume_ratio_print_vs_yahoo_median']:.4f}; missing "
+                       f"crosses from 2016 replaced by the RTH 5Min open / close (as `load_market`): "
+                       f"{data.fallbacks.get(s) or 'none'}"
                        for s, r in data.reports.items())  # fmt: skip
     doc = f"""# U5 — Reproduce the inherited claim and diagnose the mechanism
 
