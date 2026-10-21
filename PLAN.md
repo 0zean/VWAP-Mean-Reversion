@@ -388,14 +388,18 @@ the **conditional mean**:
 
 - Components: the MR region (H1) and a trend region (TSMOM: sign of the trailing return over {21, 63, 126, 252}
   sessions, equal weight, 1× notional, fixed from Moskowitz–Ooi–Pedersen; Donchian-55 breakout as a variant).
-- Blend: `f_t = w_t f^MR_t + (1 − w_t) f^TF_t`, `w_t = 0.5 + κ (P_t − 0.5)` with `P_t` = R2's one-step-ahead
-  P(fast reversion) and shrink κ = 0.5 registered. Benchmarks: static 50/50; MR alone; TF alone; vol-managed
+- Blend: `f_t = w_t f^MR_t + (1 − w_t) f^TF_t`, `w_t = 0.5 + κ (P_t − 0.5)` with `P_t` = **B1's favourable-set
+  indicator** at the decision (σ̂ over 21 in the top two quintiles of its trailing 504, §6.4; so w_t ∈ {0.25, 0.75})
+  and shrink κ = 0.5 registered (amended 2026-10-21, §11: B1 replaces R2's one-step-ahead P(fast reversion), which
+  U10 found to track variance regimes with a near-arbitrary φ label on 2016–2025). Benchmarks: static 50/50; MR alone; TF alone; vol-managed
   buy-and-hold (σ* 15 %, σ̂ 21, exposure ≤ 1: the retail benchmark).
 - Test: paired Ledoit–Wolf Sharpe difference, blend vs static blend, one-sided (ρ ≈ 0.9, so the √π problem of §6.4
   does not arise); the matched-volatility comparison and the drawdown difference reported. Floor: blend net return
   ≥ 0.9 × static blend's.
-- Variants (≤ 6): `w_t` from B1; from B6 computed on MR − TF (the "which rule has been working" baseline the regime
-  model must beat); from R4; hard switch (w ∈ {0, 1}); κ ∈ {0.25, 0.75}; vol-targeted blend at 10 %. The MR–TF
+- Variants (≤ 6): `w_t` from R2's P(fast) (the original headline, reported with U10's φ-separation caveat); from
+  B1's trailing-504 percentile (continuous P_t); from B6 computed on MR − TF (the "which rule has been working"
+  baseline the regime model must beat); hard switch (w ∈ {0, 1}); κ ∈ {0.25, 0.75}; vol-targeted blend at 10 %.
+  (R4 was not built, U9.) The MR–TF
   daily return correlation by year is reported: the static blend already harvests that diversification.
 
 ### 6.6 Power first (numbers to keep in mind)
@@ -825,7 +829,7 @@ sets, κ-free; ≤ 12 variants; MDE line per headline at its π); the incrementa
 t+1 (not the filtered P(s_t)); B6 at a `t1545` decision would read an incomplete session (it is defined on
 completed sessions only).
 
-**Cost.** 1 session. **Depends on.** U6, U8, U9. **Status.** done, not merged (`unit/10-h3`); diagnostic null, 0 of 4
+**Cost.** 1 session. **Depends on.** U6, U8, U9. **Status.** done, merged; diagnostic null, 0 of 4
 headline gates pass (`results/reports/U10_status.md`).
 
 ---
@@ -1012,7 +1016,7 @@ p_boot, t_nw, lower90, max_dd, turnover, round_trips_yr, flat_share, cost_bp, st
 | U7 | H2 persistence | done, merged | last-5-yr NW t 0.19 (+0.40 bp/day); Bai–Perron 0 breaks (p 0.81); P(μ_T > 0) = 0.447 (q_zero; causal track 0.447); `diag` edge = 2006–10 only |
 | U8 | state estimators + noise study | done, merged | no Hurst-type estimator has SD ≤ 0.025 at ≤ 1,008 sessions (DFA-short 0.044 @504; best two need 2,016) → E1–E4 under-powered variants; 3.4–7.6 independent estimates per decade; 236 tests |
 | U9 | regime models + detection study | done, merged | synthetic: R2 Youden J 0.63–0.67 vs B4 0.30–0.53, but 40 % 'fast' calls on a no-regime null; R1 J ≈ B1; R3 catches 21 % of σ doublings, ~0 false alarms; decision < 1 ms, refit 0.2 s / 21 sessions; 252 tests |
-| U10 | H3 predictability | done, not merged | **diagnostic null, 0 of 4 headline gates pass** (Holm): B1 Δμ +2.86 bp/day p 0.19 (Holm 0.74), π 0.398/0.40, 42 episodes; B4 −2.28 p 0.78, π 0.519/0.50, 47; B5 −9.71 p 0.97, π 0.893 (rep.), 25; R2 +2.65 p 0.19 (Holm 0.74), π 0.458 (rep.), 85; every p·K 1.0; MDE ≈ 11.4–11.6; R2 φ separation 0.028, 103/121 refits swap-flagged (variance regimes, not φ); 269 tests |
+| U10 | H3 predictability | done, merged | **diagnostic null, 0 of 4 headline gates pass** (Holm): B1 Δμ +2.86 bp/day p 0.19 (Holm 0.74), π 0.398/0.40, 42 episodes; B4 −2.28 p 0.78, π 0.519/0.50, 47; B5 −9.71 p 0.97, π 0.893 (rep.), 25; R2 +2.65 p 0.19 (Holm 0.74), π 0.458 (rep.), 85; every p·K 1.0; MDE ≈ 11.4–11.6; R2 φ separation 0.028, 103/121 refits swap-flagged (variance regimes, not φ); 269 tests |
 | U11 | H4 blend | not started | |
 | U12 | holdout read, verdict, registry | not started | |
 | U13 | forward test | not started | |
@@ -1026,6 +1030,25 @@ accesses = 0.
 ---
 
 ## 11. Handoff notes and amendments (newest first)
+
+- **2026-10-21 — U10 merged; amendment: H4's blend weight is B1 (user decisions).**
+  - Merge: `unit/10-h3` into `dev` (e59c52f). The done-gate passes on the merged tree.
+  - **H4 amended (§6.5).** The blend weight's P_t is now B1's favourable-set indicator: σ̂ over 21 in the top two
+    quintiles of its trailing 504, exactly H3's B1 gate. With κ = 0.5, w_t ∈ {0.25, 0.75}. The user's reason: U10
+    found R2's P(fast) tracks variance regimes, with a φ separation of 0.028 and 103 of 121 refits swap-flagged, so
+    its "fast" label is close to arbitrary on this window.
+  - Variants:
+    - R2's P(fast) moves to the variants and is reported with that caveat;
+    - "from R4" (not built) is replaced by B1's continuous trailing-504 percentile;
+    - the rest are unchanged.
+  - Consequences that stand:
+    - B1 was chosen **after** U10 read its development-window Δμ (+2.86 bp/day, p 0.19) on the same window.
+    - H4 is therefore a diagnostic read under K ≥ 170. A positive result there cannot confirm anything; only the
+      holdout (U12) and the forward test (U13) can.
+  - `specs/H4_blend.yaml` (draft) updated: the weight, the variants and the routing note.
+  - **U2 and U13 still run (user).** They wait on the user upgrading the Alpaca account. U2 is not started until the
+    user says so.
+  - Next: U11, when the user starts it.
 
 - 2026-10-21 — U10 H3 regime predictability. Branch `unit/10-h3` @ 2e77cfb (spec registered at bd6e887).
   Done-when: 3/3 ticked (`results/reports/U10_status.md`, report `U10_regimes.md`).

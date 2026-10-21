@@ -1,13 +1,31 @@
-# DRAFT (U9). Not a registered spec; the runner refuses it.
+# DRAFT (U9; amended 2026-10-21 after U10). Not a registered spec; the runner refuses it.
 id: H4_blend
 status: draft — not registered; U11 completes it
 blend:
   weight: w_t = 0.5 + κ (P_t − 0.5)
-  P_t: R2 one-step-ahead P(fast reversion)
+  P_t: B1 favourable-set indicator at the decision (σ̂ of returns over 21 in the top two quintiles of its trailing
+    504; H3's B1 gate, specs/H3_regime_gates.yaml)
+  w_values: [0.25, 0.75]
   kappa: 0.5
   components:
   - R0 (H1 region)
   - TSMOM {21, 63, 126, 252}, equal weight
+weight_configuration:
+  B1:
+    column: B1_vol
+    definition: σ̂ of close-to-close returns over 21 (features/state.py REGISTERED.vol)
+    rule: q_above
+    threshold: 0.6
+    trailing_quantile_window: 504
+    pi: 0.4
+variants:
+- 'R2: w_t from R2''s one-step-ahead P(fast reversion), the configuration below (U10 caveat: on 2016-2025 its two
+  φs differ by 0.028 at the median, 103 of 121 refits swap-flagged; reported, not a headline)'
+- 'B1_percentile: P_t = B1''s trailing-504 percentile (continuous)'
+- 'B6_diff: P_t from B6 computed on MR − TF (63-session net P&L of MR minus TF > 0)'
+- 'hard_switch: w_t ∈ {0, 1}'
+- 'kappa: κ ∈ {0.25, 0.75}'
+- 'vol_target_10: the blend vol-targeted at 10 %'
 regime_configuration:
   R2:
     model: MS-AR(1), intercept form (switching c, φ, σ²)
@@ -38,6 +56,6 @@ regime_configuration:
       - 0.6788892823837224
     - - 0.6511363209803301
       - 0.6788653053722058
-  R4: 'optional, not built (§7 U9: only if time remains after R1–R3)'
-routing: 'amended 2026-10-21 (PLAN §11): H4 runs on the development window 2016-2025
-  as a diagnostic, blend weight from R2'
+  R4: 'optional, not built (§7 U9)'
+routing: 'amended 2026-10-21 (PLAN §11): H4 runs on the development window 2016-2025 as a diagnostic; blend weight
+  from B1 (amended after U10, chosen after B1''s H3 Δμ was read: diagnostic under K >= 170)'
