@@ -118,7 +118,7 @@ def main(argv=None) -> int:
                  *[f"{r[c]:.3f}" if np.isfinite(r[c]) else "—" for c in mw.columns if c.startswith("sdH@")]]
                 for _, r in mw.iterrows()]), "",
          "**Lo's modified R/S (the reference test; V outside [0.809, 1.862] = reject short memory at 5 %), fGn:**", "",
-         table(["H", "n", "rejection rate"], [[r["H"], r["n"], f"{r['reject']:.3f}"] for _, r in lo.iterrows()]), "",
+         table(["H", "n", "rejection rate"], [[r["H"], int(r["n"]), f"{r['reject']:.3f}"] for _, r in lo.iterrows()]), "",
          ("The R/S row of §1 is the classic R/S Hurst exponent (`nolds.hurst_rs` convention), the number most often "
           "quoted; Lo's V is a test statistic, not an H estimate, so it appears here as size and power."), "",
          ("## 3. Overlap: consecutive rolling estimates (one seeded 30-year fGn path, H = 0.5; the integrated "
