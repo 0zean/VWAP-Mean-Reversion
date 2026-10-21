@@ -3,7 +3,9 @@
 Generators:
 - `fgn(n, H, rng)`: fractional Gaussian noise by the Davies–Harte circulant embedding (exact; unit variance);
 - `arfima_t(n, H, rng)`: ARFIMA(0, d, 0), d = H − ½, driven by Student-t₄ innovations scaled to unit variance (MA(∞)
-  weights ψ_k = ψ_{k−1}(k − 1 + d)/k truncated at `burn` lags, applied by FFT convolution): long memory with fat tails.
+  weights ψ_k = ψ_{k−1}(k − 1 + d)/k truncated at `burn` lags, applied by FFT convolution): long memory with fat tails;
+  `arfima_gauss` is the same with Gaussian innovations, so the study separates ARFIMA's short-lag structure (it differs
+  from fGn's at the same H) from the tails.
 
 U8 study (`noise_table`, `rolling_persistence`, `delta_alpha_tails`, `rw_phi_null`): bias and SD of each Hurst-type
 estimator over H × window × innovation, the smallest window with SD ≤ 0.025 (PLAN.md §7 U8's decision rule), the
@@ -39,14 +41,24 @@ def arfima_t(n: int, H: float, rng: np.random.Generator, *, df: float = 4.0, bur
     d = H - 0.5
     k = np.arange(1, burn + n)
     psi = np.r_[1.0, np.cumprod((k - 1 + d) / k)]
-    e = rng.standard_t(df, burn + n) / np.sqrt(df / (df - 2))
+    e = (
+        rng.standard_normal(burn + n)
+        if np.isinf(df)
+        else rng.standard_t(df, burn + n) / np.sqrt(df / (df - 2))
+    )
     size = 1 << int(np.ceil(np.log2(2 * (burn + n))))
     x = np.fft.irfft(np.fft.rfft(e, size) * np.fft.rfft(psi, size), size)[: burn + n]
     x = x[burn:]
     return x / x.std()
 
 
-GENERATORS: dict[str, Callable[..., np.ndarray]] = {"gaussian fGn": fgn, "ARFIMA t4": arfima_t}
+def arfima_gauss(n: int, H: float, rng: np.random.Generator, *, burn: int = 2000) -> np.ndarray:
+    """ARFIMA(0, H − ½, 0) with Gaussian innovations: separates ARFIMA's short-lag structure from t₄'s tails."""
+    return arfima_t(n, H, rng, df=np.inf, burn=burn)
+
+
+GENERATORS: dict[str, Callable[..., np.ndarray]] = {"gaussian fGn": fgn, "ARFIMA gaussian": arfima_gauss,
+                                                    "ARFIMA t4": arfima_t}  # fmt: skip
 
 ESTIMATORS: dict[str, Callable[[np.ndarray], float]] = {
     "DFA-1 standard [10, 126]": lambda x: hurst.dfa(x, "standard")["alpha"],
@@ -82,15 +94,53 @@ def noise_table(
     return pd.DataFrame(rows)
 
 
+def attenuation(tab: pd.DataFrame) -> pd.DataFrame:
+    """Per estimator × generator × n: the slope of the mean estimate on the true H (1 = unattenuated)."""
+    rows = []
+    for _, grp in tab.groupby(["estimator", "innovations", "n"]):
+        if grp["H"].nunique() > 1:
+            slope = float(np.polyfit(grp["H"], grp["H"] + grp["bias"], 1)[0])
+            r0 = grp.iloc[0]
+            rows.append({"estimator": r0["estimator"], "innovations": r0["innovations"], "n": int(r0["n"]),
+                         "slope": slope})  # fmt: skip
+    return pd.DataFrame(rows)
+
+
 def min_window(tab: pd.DataFrame, sd_max: float = SD_MAX) -> pd.DataFrame:
-    """Per estimator and generator: the smallest n whose SD (worst over H) is ≤ sd_max, else NaN (under-powered)."""
+    """Per estimator and generator: the smallest n whose SD (worst over H) is ≤ sd_max, else NaN (under-powered) —
+    the §7 U8 rule, on the raw SD. `min_n_h` / `sdH@n` apply it to the SD in H units (SD / attenuation slope), which
+    is stricter when the estimator responds to H by less than one for one."""
     worst = tab.groupby(["estimator", "innovations", "n"])["sd"].max().reset_index()
+    att = attenuation(tab)
+    slope = {(e, g, int(n)): float(v) for e, g, n, v in
+             zip(att["estimator"], att["innovations"], att["n"], att["slope"], strict=True)} if len(att) else {}  # fmt: skip
     out = []
-    for (e, g), grp in worst.groupby(["estimator", "innovations"]):
+    for _, grp in worst.groupby(["estimator", "innovations"]):
+        e, g = grp.iloc[0]["estimator"], grp.iloc[0]["innovations"]
         ok = grp[grp["sd"] <= sd_max]
-        out.append({"estimator": e, "innovations": g, "min_n": int(ok["n"].min()) if len(ok) else np.nan,
-                    **{f"sd@{int(n)}": float(s) for n, s in zip(grp["n"], grp["sd"], strict=True)}})  # fmt: skip
+        row = {"estimator": e, "innovations": g, "min_n": int(ok["n"].min()) if len(ok) else np.nan,
+               **{f"sd@{int(n)}": float(s) for n, s in zip(grp["n"], grp["sd"], strict=True)}}  # fmt: skip
+        if slope:
+            sd_h = {
+                int(n): float(s) / slope[(e, g, int(n))] for n, s in zip(grp["n"], grp["sd"], strict=True)
+            }
+            okh = [n for n, s in sd_h.items() if s <= sd_max]
+            row |= {"min_n_h": min(okh) if okh else np.nan, **{f"sdH@{n}": s for n, s in sd_h.items()}}
+        out.append(row)
     return pd.DataFrame(out)
+
+
+def lo_rs_rejection(
+    Hs=(0.40, 0.45, 0.50, 0.55, 0.60), n: int = 1008, draws: int = 500, seed: int = 4
+) -> pd.DataFrame:
+    """Share of fGn draws where Lo's modified R/S V falls outside its 95 % short-memory range [0.809, 1.862]: the size
+    at H = 0.5 and the power elsewhere (the reference test the literature quotes; PLAN §7 U8)."""
+    rows = []
+    for i, H in enumerate(Hs):
+        rng = np.random.default_rng([seed, i])
+        v = np.array([hurst.lo_modified_rs(fgn(n, H, rng)) for _ in range(draws)])
+        rows.append({"H": H, "n": n, "reject": float(((v < 0.809) | (v > 1.862)).mean())})
+    return pd.DataFrame(rows)
 
 
 def _iact(x: np.ndarray, max_lag: int) -> float:

@@ -168,7 +168,7 @@ def test_harness_catches_a_peeking_estimator_and_a_symmetric_boundary():
     for fn in (peek, symmetric):
         with pytest.raises(AssertionError):
             assert_causal(fn, m, CLOSE)
-    assert_causal(lambda mk: rolling_av(mk.sessions["close"].pct_change(), 128, "short"), m, CLOSE)
+    assert_causal(lambda mk: rolling_av(mk.sessions["close"].pct_change(), 200, "short"), m, CLOSE)
 
 
 # ── generators and the study ────────────────────────────────────────────────
@@ -189,8 +189,12 @@ def test_arfima_t_is_unit_variance_and_fat_tailed():
 
 def test_min_window_rule():
     tab = pd.DataFrame({"estimator": ["e"] * 4, "innovations": ["g"] * 4, "H": [0.4, 0.6, 0.4, 0.6],
-                        "n": [252, 252, 504, 504], "sd": [0.03, 0.02, 0.024, 0.025]})  # fmt: skip
-    assert cb.min_window(tab).iloc[0]["min_n"] == 504
+                        "n": [252, 252, 504, 504], "sd": [0.03, 0.02, 0.024, 0.025],
+                        "bias": [0.05, 0.01, 0.05, 0.01]})  # fmt: skip
+    mw = cb.min_window(tab).iloc[0]
+    assert mw["min_n"] == 504
+    assert cb.attenuation(tab)["slope"].tolist() == pytest.approx([0.8, 0.8])  # (0.61 − 0.45) / 0.2
+    assert mw["sdH@504"] == pytest.approx(0.025 / 0.8) and np.isnan(mw["min_n_h"])  # stricter in H units
     tab.loc[3, "sd"] = 0.026
     assert np.isnan(cb.min_window(tab).iloc[0]["min_n"])
 
@@ -203,3 +207,42 @@ def test_noise_study_small():
     da = cb.delta_alpha_tails(n=1008, draws=10)
     assert da.set_index("series").loc["iid t4", "delta_alpha_mean"] > da.set_index("series").loc["iid Gaussian",
                                                                                                 "delta_alpha_mean"]  # fmt: skip
+
+
+def test_rolling_av_equals_abry_veitch_on_the_same_returns():
+    r = pd.Series(cb.fgn(1500, 0.45, np.random.default_rng(15)))
+    roll = rolling_av(r, 512, "short")
+    for i in (700, 1499):
+        assert roll.iloc[i] == pytest.approx(
+            abry_veitch(r.iloc[i - 511 : i + 1].to_numpy(), "short"), abs=1e-12
+        )
+    assert roll.iloc[:511].isna().all() and roll.iloc[511:].notna().all()
+
+
+def test_lo_q_uses_the_absolute_autocorrelation():
+    rng = np.random.default_rng(16)
+    v = []
+    for _ in range(200):
+        e = rng.standard_normal(1000)
+        x = np.empty(1000)
+        x[0] = e[0]
+        for t in range(1, 1000):
+            x[t] = -0.3 * x[t - 1] + e[t]
+        v.append(hurst.lo_modified_rs(x))
+    out = np.mean((np.array(v) < 0.809) | (np.array(v) > 1.862))
+    assert out < 0.12  # short memory, anti-persistent: near the 5 % size, not ≈ 30 %
+
+
+def test_b6_is_causal_through_its_source():
+    m = daily_market("SPY", "2016-01-04", "2017-12-29", 6)
+
+    def fn(mk):  # a net stream that moves with the market, so the harness perturbs B6's input too
+        net = mk.sessions["close"].pct_change() * -0.5
+        return market_state(mk, net=net, cfg=SMALL)["B6_mom"]
+
+    assert_causal(fn, m, CLOSE)
+
+
+def test_arfima_gauss_has_gaussian_tails():
+    x = cb.arfima_gauss(20000, 0.5, np.random.default_rng(17))
+    assert ((x - x.mean()) ** 4).mean() / x.var() ** 2 == pytest.approx(3.0, abs=0.2)

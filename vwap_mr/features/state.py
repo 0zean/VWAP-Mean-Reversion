@@ -16,7 +16,7 @@ AR(1) φ of d*_t, read against its random-walk reference (`regime.calibrate.rw_p
 | B6_mom | B6 | the region's net P&L summed over 63 (needs the H1 stream; absent otherwise) |
 | E1_dfa_std | E1 | DFA-1 α over 504, scales [10, 126] |
 | E2_dfa_short | E2 | DFA-1 α over 504, scales [4, 32] |
-| E3_av_short | E3 | Abry–Veitch H, causal MODWT j 1–4, over 512 |
+| E3_av_short | E3 | Abry–Veitch H, causal MODWT j 1–4, from the last 512 returns (coefficients fully inside) |
 | E4_h2, E4_dalpha | E4 | MF-DFA h(2) and Δα over 1,008, q −5 … 5, scales [10, 126] |
 
 The quantile and median rules that turn a state into a gate (trailing 504) belong to U10's gates."""
@@ -93,12 +93,15 @@ def market_state(market, *, net: pd.Series | None = None, cfg: StateConfig = REG
     return state_frame(market.sessions, vix=vix, net=net, cfg=cfg)
 
 
-def long_state(symbol: str, vintage: str, *, cfg: StateConfig = REGISTERED) -> pd.DataFrame:
+def long_state(
+    symbol: str, vintage: str, *, net: pd.Series | None = None, cfg: StateConfig = REGISTERED
+) -> pd.DataFrame:
     """State on the spliced long series (`load_long`: `diag` before 2016-01-04, Alpaca after), so every window is
     full on 2016-01-04. VIX timing: on sessions the vintage's exchange calendar covers (2015 on) VIX is read at the
     calendar's close-decision instant (early closes respected); before that there is no calendar, so it is read at
     13:00 on the session date, i.e. the previous session's close (one day stale, never a value an early-close
-    decision could not have seen)."""
+    decision could not have seen). B6 needs the region's net P&L (`net`, the H1 stream: development window only, so
+    B6 has no `diag` warm-up and is NaN for its first 63 sessions)."""
     from vwap_mr.data.calendar import decision_times, get_calendar
     from vwap_mr.data.exo import Exo, load_series
     from vwap_mr.data.secondary import load_long
@@ -113,9 +116,9 @@ def long_state(symbol: str, vintage: str, *, cfg: StateConfig = REGISTERED) -> p
     when.loc[covered] = decision_times(covered, cal, DecisionTime.CLOSE)
     vix_f = load_series("VIX", naive[0] - pd.Timedelta(days=10), "2026-01-01", vintage=vintage)
     vix = pd.Series(Exo({"VIX": vix_f}).asof("VIX", pd.DatetimeIndex(when.to_numpy())), index=days)
-    return state_frame(frame, vix=vix, cfg=cfg)
+    return state_frame(frame, vix=vix, net=net, cfg=cfg)
 
 
 SMALL = replace(
-    REGISTERED, vol=10, ac=20, phi=30, vr=40, mom=20, dfa=260, av=128, mf=280
+    REGISTERED, vol=10, ac=20, phi=30, vr=40, mom=20, dfa=260, av=200, mf=280
 )  # tests: short series

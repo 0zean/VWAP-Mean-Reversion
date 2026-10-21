@@ -55,7 +55,7 @@ def frozen(mw: pd.DataFrame, tab: pd.DataFrame) -> list[dict]:
         ok = [n for n in grid if near <= n <= REGISTERED_MAX and worst[(est, n)] <= cb.SD_MAX]
         sd_at = float(worst[(est, near)])
         out.append({"label": label, "column": col, "estimator": est, "window_6_4": w,
-                    "window": int(ok[0]) if ok else w, "scale_set": scale, "favourable": fav, "pi": pi,
+                    "window": (w if ok[0] == near else int(ok[0])) if ok else w, "scale_set": scale, "favourable": fav, "pi": pi,
                     "sd_at_6_4": round(sd_at, 4), "sd_at_window": round(float(worst[(est, ok[0])]) if ok else sd_at, 4),
                     "status": "powered" if ok else "under-powered"})  # fmt: skip
     return out
@@ -74,6 +74,7 @@ def main(argv=None) -> int:
     pers = cb.rolling_persistence()
     da = cb.delta_alpha_tails(draws=min(a.draws, 200))
     phi = cb.rw_phi_null()
+    lo = cb.lo_rs_rejection(draws=min(a.draws, 500))
     fz = frozen(mw, tab)
     t_study = time.time() - t0
 
@@ -95,21 +96,33 @@ def main(argv=None) -> int:
         )
     L = ["# U8 — State estimators and their noise (synthetic; PLAN.md §7 U8)", "",
          (f"Synthetic only: no market return or P&L is read, so no look is recorded (K unchanged). {a.draws} draws per "
-         f"cell; Gaussian fGn (Davies–Harte) and ARFIMA(0, H − ½, 0) with Student-t₄ innovations; seeds fixed in "
-         f"`regime/calibrate.py`. Runtime of the study {t_study:.0f} s."), "",
+         f"cell; Gaussian fGn (Davies–Harte), ARFIMA(0, H − ½, 0) with Gaussian innovations, and the same with "
+         f"Student-t₄ innovations (the Gaussian ARFIMA separates ARFIMA's short-lag structure from the tails); seeds "
+         f"fixed in `regime/calibrate.py`. Runtime of the study {t_study:.0f} s."), "",
          "## 1. Bias / SD by estimator, innovations, window and H", "",
          ("MF-DFA h(2) on the standard scales equals DFA-1 standard exactly (tested), so E4's h(2) is the DFA-1 standard "
          "row at n 1,008. Abry–Veitch standard (j 2–6) needs ≥ 512 sessions; DFA-1 standard needs ≥ 252."), "",
          table(["estimator", "innovations", "n", "H 0.40", "0.45", "0.50", "0.55", "0.60", "ms / estimate"], piv), "",
          "## 2. Smallest window with SD ≤ 0.025 (worst over H)", "",
          ("The registered grid is 252 / 504 / 1,008 (§7 U8). The 2,016 column (8 years) is informational: it shows "
-         "the window a powered estimate would need. A gate on an 8-year window barely moves, so it is never frozen."),
+         "the window a powered estimate would need. A gate on an 8-year window barely moves, so it is never frozen. "
+         "The rule is on the raw SD; the SD in H units (raw SD ÷ the slope of the mean estimate on the true H) is "
+         "stricter wherever an estimator responds to H by less than one for one, and is shown beside it."),
          "",
-         table(["estimator", "innovations", "min n", *[c for c in mw.columns if c.startswith("sd@")]],
+         table(["estimator", "innovations", "min n (raw)", "min n (H units)",
+                *[f"SD {c[3:]}" for c in mw.columns if c.startswith("sd@")],
+                *[f"SD_H {c[4:]}" for c in mw.columns if c.startswith("sdH@")]],
                [[r["estimator"], r["innovations"], "—" if np.isnan(r["min_n"]) else int(r["min_n"]),
-                 *[f"{r[c]:.3f}" if np.isfinite(r[c]) else "—" for c in mw.columns if c.startswith("sd@")]]
+                 "—" if np.isnan(r.get("min_n_h", np.nan)) else int(r["min_n_h"]),
+                 *[f"{r[c]:.3f}" if np.isfinite(r[c]) else "—" for c in mw.columns if c.startswith("sd@")],
+                 *[f"{r[c]:.3f}" if np.isfinite(r[c]) else "—" for c in mw.columns if c.startswith("sdH@")]]
                 for _, r in mw.iterrows()]), "",
-         "## 3. Overlap: consecutive rolling estimates (one 30-year fGn path, H = 0.5)", "",
+         "**Lo's modified R/S (the reference test; V outside [0.809, 1.862] = reject short memory at 5 %), fGn:**", "",
+         table(["H", "n", "rejection rate"], [[r["H"], r["n"], f"{r['reject']:.3f}"] for _, r in lo.iterrows()]), "",
+         ("The R/S row of §1 is the classic R/S Hurst exponent (`nolds.hurst_rs` convention), the number most often "
+          "quoted; Lo's V is a test statistic, not an H estimate, so it appears here as size and power."), "",
+         ("## 3. Overlap: consecutive rolling estimates (one seeded 30-year fGn path, H = 0.5; the integrated "
+          "autocorrelation is summed until ρ first drops below 0.05; no interval)"), "",
          table(["estimator", "window", "lag-1 autocorrelation", "independent estimates per decade"],
                [[r["estimator"], r["window"], f"{r['rho1']:.3f}", f"{r['n_eff_per_decade']:.1f}"]
                 for _, r in pers.iterrows()]), "",

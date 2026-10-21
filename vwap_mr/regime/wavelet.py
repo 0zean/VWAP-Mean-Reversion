@@ -81,17 +81,20 @@ def abry_veitch(r, level_set="short", wavelet: str = WAVELET) -> float:
 
 
 def rolling_av(r: pd.Series, window: int = 512, level_set="short", wavelet: str = WAVELET) -> pd.Series:
-    """Abry–Veitch H over the trailing `window` sessions: wavelet variances are trailing means of W_j² of the causal
-    MODWT of the whole return series (each coefficient uses returns ≤ its session), so the estimate at t uses returns
-    ≤ t only. NaN until `window` valid coefficients exist at the top level, or while a NaN return is in reach."""
+    """Abry–Veitch H from the trailing `window` returns: at level j the wavelet variance is the mean of W_j² over the
+    window − (2^j − 1)(L − 1) coefficients whose whole filter support lies inside those returns, so the estimate at t
+    reaches back exactly `window` returns (as the DFA windows do) and equals `abry_veitch` on that window (tested).
+    NaN until the window is full or while a NaN return is in reach."""
     j1, j2 = LEVEL_SETS[level_set] if isinstance(level_set, str) else level_set
     x = r.to_numpy(float)
     W = causal_modwt(x, j2, wavelet)  # a NaN return propagates into every coefficient that reaches it
     js = np.arange(j1, j2 + 1)
-    mu = np.stack(
-        [pd.Series(W[j - 1] ** 2).rolling(window, min_periods=window).mean().to_numpy() for j in js], axis=-1
-    )
-    n_eff = np.array([window / 2**j for j in js])
+    counts = np.array([window - boundary_len(j, wavelet) for j in js])
+    if (counts / 2.0**js < 2).any():
+        raise ValueError(f"window {window} too short for level {j2}")
+    mu = np.stack([pd.Series(W[j - 1] ** 2).rolling(int(c), min_periods=int(c)).mean().to_numpy()
+                   for j, c in zip(js, counts, strict=True)], axis=-1)  # fmt: skip
+    n_eff = counts / 2.0**js
     out = np.full(len(x), np.nan)
     ok = np.isfinite(mu).all(axis=1) & (mu > 0).all(axis=1)
     out[ok] = _av(mu[ok], n_eff, js)

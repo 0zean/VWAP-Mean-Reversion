@@ -175,7 +175,7 @@ def lo_modified_rs(x, q: int | None = None) -> float:
     R = max(z.max(), 0.0) - min(z.min(), 0.0)
     if q is None:
         rho = float(np.corrcoef(y[1:], y[:-1])[0, 1])
-        q = int((1.5 * N) ** (1 / 3) * (2 * rho / (1 - rho**2)) ** (2 / 3)) if rho > 0 else 0
+        q = int((1.5 * N) ** (1 / 3) * (2 * abs(rho) / (1 - rho**2)) ** (2 / 3))  # Andrews (1991): |ρ̂|
     s2 = y @ y / N
     for j in range(1, q + 1):
         s2 += 2 * (1 - j / (q + 1)) * (y[j:] @ y[:-j]) / N
