@@ -15,7 +15,8 @@ Inputs and timing:
   target at the registered costs; the statistic is the paired Ledoit–Wolf ΔSharpe of their daily excess returns.
 
 Per configuration: both Sharpes, ΔSharpe (annualized), p, the one-sided 90 % lower bound, ρ(blend, static), the
-blend's return at the static's volatility, the drawdown difference, the floor, w's distribution, and the turnover of
+blend's return at the static's volatility, the drawdown difference, the floor (on net returns), w's distribution, the
+ΔSharpe vs a matched-mean static (w fixed at E[w]: the timing value without the static tilt toward TF), and the turnover of
 the w-scaled MR leg and the (1 − w)-scaled TF leg with the netting between them; the blend's cost is attributed to
 the legs pro rata to that turnover. The headline passes iff p < alpha and the floor holds (k = 1). Also reported: R₀,
 TSMOM, DC55 and the vol-managed buy-and-hold alone, the MR–TF correlation by year, and R2's refits."""
@@ -82,6 +83,10 @@ def _validate_h4(spec: Spec) -> None:
             or not (_num(c.get("kappa")) and 0 <= c["kappa"] <= 1)
         ):
             raise SpecError(f"configuration {n}: P in {P_SOURCES}, tf in {tuple(TREND)}, kappa in [0, 1]")  # fmt: skip
+        if c["P"] == "B6_diff" and "undefined" not in c:
+            raise SpecError(
+                f"configuration {n}: B6_diff is undefined for its first window; register `undefined`"
+            )
         for k in ("sigma", "undefined"):
             if k in c and not (_num(c[k]) and 0 < c[k] <= 1):
                 raise SpecError(f"configuration {n}: {k} must be a number in (0, 1]")
@@ -114,6 +119,11 @@ def leg_turnover(res: Result, w: np.ndarray, f_mr: np.ndarray, f_tf: np.ndarray,
     return {"blend": s["turnover"], "mr_leg": mr, "tf_leg": tf, "netted": mr + tf - s["turnover"],
             "cost_bp_day": cost, "cost_mr_bp_day": cost * mr / (mr + tf) if mr + tf else 0.0,
             "cost_tf_bp_day": cost * tf / (mr + tf) if mr + tf else 0.0}  # fmt: skip
+
+
+def net_ann(res: Result) -> float:
+    """Annualized mean daily net return (the floor's 'net return', PLAN §6.5), after the first session."""
+    return float(res.net.iloc[1:].mean() * ANN)
 
 
 def corr_by_year(a: pd.Series, b: pd.Series) -> dict:
@@ -222,8 +232,20 @@ def run_h4(
             rec["rho"] = float(bx.corr(sx))
             rec["ret_ann_volmatched"] = float(bx.mean() * ANN * sx.std(ddof=1) / bx.std(ddof=1))
             rec["dd_diff"] = sb["max_dd"] - ss["max_dd"]
-            fl = spec["floors"]["net_ratio_min"]
-            rec["floor"] = bool(sb["ret_ann"] >= ss["ret_ann"] - (1 - fl) * abs(ss["ret_ann"]))
+            fl, nb, ns = spec["floors"]["net_ratio_min"], net_ann(res), net_ann(sres)
+            rec |= {"net_ann": nb, "net_ann_static": ns, "floor": bool(nb >= ns - (1 - fl) * abs(ns))}
+            # the matched-mean static (reported): w fixed at the blend's mean weight, so ΔSharpe is timing only
+            pi = wc["B1"]["pi"] if cc["P"] == "B1" else None
+            wm = 0.5 + cc["kappa"] * (pi - 0.5) if pi is not None else float(w.mean())
+            mres = go(replace(market, state=st.assign(w_mm=wm)), Blend(mr, tf, "w_mm", sig, "matched_mean"))
+            mx = mres.excess.iloc[1:]
+            rec["matched_mean"] = {"w": wm, "source": "registered π" if pi is not None else "realized mean w",
+                                   "sharpe": summary(mres)["sharpe"]}  # fmt: skip
+            try:
+                lm = sharpe_test(bx.to_numpy(), mx.to_numpy(), alpha=0.10, **kw)
+                rec["matched_mean"] |= {"d_sharpe_ann": lm["delta_ann"], "p": lm["p"]}
+            except ValueError as e:
+                rec["matched_mean"]["error"] = str(e)
             scale = (
                 np.ones(len(w))
                 if sig is None
@@ -312,7 +334,7 @@ def render_h4(record: dict, looks_path: Path = LOOKS_PATH) -> str:
     L += ["## 1. Headline (one-sided H₁: ΔSharpe > 0, blend vs static 50/50)", "",
           _table(CONF_HEADER + ["passes"], [_conf_row(n, cs[n], k) + [cs[n]["passes"]] for n in heads]), "",
           (f"**Verdict: {'passes' if record['passes'] else 'null'} (diagnostic)** — pass: p < {spec['test']['alpha']} "
-           f"and the blend's net excess return ≥ the static's − {1 - spec['floors']['net_ratio_min']:g} × |static's|. "
+           f"and the blend's net return ≥ the static's − {1 - spec['floors']['net_ratio_min']:g} × |static's|. "
            f"w_t: mean {_f(h['w_mean'], 3)}, shares {h['w_values']}. ΔSharpe is annualized; the 90 % lower bound is "
            "one-sided."), ""]  # fmt: skip
     L += ["## 2. Variants (each vs its own static blend: the same TF and vol target, w = 0.5)", "",
@@ -325,6 +347,20 @@ def render_h4(record: dict, looks_path: Path = LOOKS_PATH) -> str:
                    _f(o["ret_ann_volmatched"] * 100, 2, True), _f(o["static"]["ret_ann"] * 100, 2, True),
                    f"{_f(o['blend']['max_dd'] * 100, 1)} / {_f(o['static']['max_dd'] * 100, 1)}",
                    _f(o["dd_diff"] * 100, 1, True)] for n, o in cs.items()]), ""]  # fmt: skip
+    L += ["## 3b. Timing vs static tilt: each blend vs its matched-mean static (reported, not the test)", "",
+          _table(["configuration", "matched w", "from", "Sharpe matched", "ΔSharpe vs matched (LW)",
+                  "p one-sided (p·K)", "net %/yr blend / 50-50 static"],
+                 [[n, _f(o["matched_mean"]["w"], 3), o["matched_mean"]["source"], _f(o["matched_mean"]["sharpe"]),
+                   _f(o["matched_mean"].get("d_sharpe_ann"), sign=True),
+                   _p(o["matched_mean"].get("p"), k) if o["matched_mean"].get("p") is not None else
+                   o["matched_mean"].get("error", "—"),
+                   f"{_f(o['net_ann'] * 100, 2, True)} / {_f(o['net_ann_static'] * 100, 2, True)}"]
+                  for n, o in cs.items()]), "",
+          ("The 50/50 static is the registered benchmark (§6.5), but E[w] = 0.5 + κ(π − 0.5) ≠ 0.5, so the headline "
+           "ΔSharpe also holds a constant reallocation (0.5 − E[w])(μ_TF − μ_MR); the matched-mean static removes it "
+           "(w fixed at the registered-π mean for B1 weights, at the realized mean otherwise: then it is "
+           "descriptive). A varying w also raises the blend's volatility (E[w² + (1 − w)²] > 0.5), which lowers "
+           "its Sharpe against either static."), ""]  # fmt: skip
     L += ["## 4. Benchmarks and components alone (no test; references)", "",
           _table(["stream", "bp/day", "%/yr", "vol %/yr", "Sharpe", "max DD %", "round trips/yr", "flat share",
                   "cost bp/day"],

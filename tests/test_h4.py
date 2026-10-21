@@ -253,6 +253,16 @@ def test_headline_weight_is_b1s_gate_and_the_difference_is_the_tilt(dryrun):
     hs = rec["configurations"]["hard_switch"]
     assert set(hs["w_values"]) == {"0", "1"} and hs["rho"] < o["rho"]
     assert o["d_sharpe_ann"] == pytest.approx(o["blend"]["sharpe"] - o["static"]["sharpe"], abs=0.02)
+    # the matched-mean static: E[w] at the registered π for B1 weights, the realized mean otherwise
+    assert o["matched_mean"]["w"] == pytest.approx(0.45) and hs["matched_mean"]["w"] == pytest.approx(0.4)
+    r2 = rec["configurations"]["R2"]
+    assert r2["matched_mean"]["source"] == "realized mean w" and r2["matched_mean"]["w"] == pytest.approx(
+        r2["w_mean"]
+    )
+    assert o["matched_mean"]["d_sharpe_ann"] == pytest.approx(
+        o["blend"]["sharpe"] - o["matched_mean"]["sharpe"], abs=0.02
+    )
+    assert o["floor"] == (o["net_ann"] >= o["net_ann_static"] - 0.1 * abs(o["net_ann_static"]))
 
 
 def test_runner_refuses_a_second_run_undefined_weights_scratch_breaches_and_real_data(dryrun, tmp_path):
@@ -265,8 +275,9 @@ def test_runner_refuses_a_second_run_undefined_weights_scratch_breaches_and_real
     with pytest.raises(RunError, match="synthetic"):
         dry(tmp_path, fast_spec(tmp_path), inputs=real)
     assert len(looks(tmp_path / "looks.jsonl")) == 0  # refused before the look
-    with pytest.raises(RunError, match="undefined"):
+    with pytest.raises(SpecError, match="undefined"):  # B6_diff's undefined head is known before the look
         dry(tmp_path, fast_spec(tmp_path, B6_diff={"P": "B6_diff", "kappa": 0.5, "tf": "TSMOM"}))
+    assert len(looks(tmp_path / "looks.jsonl")) == 0
     with pytest.raises(SpecError, match="configuration"):
         dry(tmp_path / "x", fast_spec(tmp_path, R2={"P": "R4", "kappa": 0.5, "tf": "TSMOM"}))
 

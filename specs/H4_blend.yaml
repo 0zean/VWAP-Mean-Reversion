@@ -32,7 +32,7 @@ test:
   seed: 0
   alpha: 0.05
 floors:
-  net_ratio_min: 0.9       # blend ret_ann >= static ret_ann − (1 − 0.9)·|static ret_ann| (= 0.9× when static > 0)
+  net_ratio_min: 0.9       # blend net ann. >= static net ann. − (1 − 0.9)·|static's| (= 0.9× when static > 0)
 expected:
   magnitude_bp_day: 0.35   # mean daily return of blend − static
   delta_sharpe: 0.08
@@ -41,11 +41,16 @@ expected:
     R0's mean is +1.49 bp/day in B1's favourable set (π 0.40) and −1.37 elsewhere; assuming TSMOM's mean does not
     depend on B1 (its development-window P&L is not read before this run), the mean difference is
     0.25 × (0.40 × 1.49 + 0.60 × 1.37) + 0.05 μ_TF ≈ 0.35 bp/day + 0.05 μ_TF (μ_TF not read; taken as 0); at the assumed static σ of 72 bp/day (power.sigma_d_bp) that
-    is ΔSharpe ≈ 0.35 / 72 × √252 ≈ 0.08 annualized. A development-window number already read.
+    is ΔSharpe ≈ 0.35 / 72 × √252 ≈ 0.08 annualized. A development-window number already read. Two terms are left
+    out (U11 review) and may be as large: (1) a static tilt, E[w] = 0.5 + κ(π − 0.5) = 0.45, adds
+    (0.5 − E[w])(μ_TF − μ_MR) = 0.05 (μ_TF − μ_MR) per day, reported apart through the matched-mean static split;
+    (2) a varying w raises the blend's variance (E[w² + (1 − w)²] = 0.625 vs 0.5; σ ratio ≈ 1.12 at ρ_MR,TF = 0,
+    1.21 at −0.3), which lowers ΔSharpe by ≈ 0.1–0.17 × the static Sharpe.
 power:
   n: 2513
   sigma_d_bp: 72.0         # assumed static-blend σ: 0.5 × √(92.4² + 110²), R0's diag σ and SPY's ≈ 110 bp, ρ = 0
-  rho: 0.9                 # blend vs static: (0.375 + 0.125) / √(0.625 × 0.5) ≈ 0.89 for uncorrelated components
+  rho: 0.9                 # blend vs static: (0.375 + 0.125) / √(0.625 × 0.5) ≈ 0.89 for uncorrelated components;
+                           # at ρ_MR,TF = −0.3 it is ≈ 0.83 and the MDE ≈ 0.46 (U11 review; diagnostic either way)
   k: 1
   alpha: 0.05
   power: 0.80
@@ -59,9 +64,9 @@ variants:                  # PLAN §6.5 (κ's two values are two cells; Donchian
   - hard_switch
   - kappa_025
   - kappa_075
-  - vol_target_10
+  - vol_target_10          # blend × min(1, 10 % / σ̂_21 of SPY): H1's vol_target_10 scaling, not a blend-vol target
   - donchian55
-splits: [benchmarks, matched_vol, drawdown, mr_tf_corr_by_year, turnover_attribution, r2_refits]
+splits: [benchmarks, matched_mean_static, matched_vol, drawdown, mr_tf_corr_by_year, turnover_attribution, r2_refits]
 budget: 9                  # 1 headline + 8 variants
 blend:
   weight: w_t = 0.5 + κ (P_t − 0.5), P_t as of the decision (the same decision as both components' targets)
@@ -69,6 +74,9 @@ blend:
   tf: {TSMOM: [21, 63, 126, 252], DC55: 55}   # strategies/trend.py
   benchmarks:
     static: w_t = 0.5 with the configuration's own TF and vol target (each configuration's ΔSharpe is vs its own)
+    matched_mean_static: >
+      reported, not tested: w fixed at E[w] = 0.5 + κ(π_registered − 0.5) for B1 weights (realized mean w otherwise,
+      descriptive), same TF and vol target: the blend's timing value without its static tilt toward TF
     mr_alone: R0
     tf_alone: TSMOM (and DC55)
     vol_managed: {sigma: 0.15, window: 21, cap: 1.0}   # min(1, 15 % / σ̂_21), σ̂ = B1_vol × √252
@@ -76,7 +84,7 @@ configurations:            # P: the weight's state; undefined: the w_t used wher
   B1: {P: B1, kappa: 0.5, tf: TSMOM}              # w ∈ {0.25, 0.75}
   R2: {P: R2, kappa: 0.5, tf: TSMOM}              # U10 caveat: φ separation 0.028, 103 / 121 refits swap-flagged
   B1_percentile: {P: B1_pct, kappa: 0.5, tf: TSMOM}
-  B6_diff: {P: B6_diff, kappa: 0.5, tf: TSMOM, undefined: 0.5}   # first 62 sessions: static, counted
+  B6_diff: {P: B6_diff, kappa: 0.5, tf: TSMOM, undefined: 0.5}   # first 62 sessions: static, counted (required)
   hard_switch: {P: B1, kappa: 1.0, tf: TSMOM}     # w ∈ {0, 1}
   kappa_025: {P: B1, kappa: 0.25, tf: TSMOM}
   kappa_075: {P: B1, kappa: 0.75, tf: TSMOM}
