@@ -760,7 +760,7 @@ windows we could use, and freeze the registered configurations before any market
 noisy); overlapping-estimate autocorrelation; the trailing-median window (504) for every "below median" set.
 
 **Cost.** 1½ sessions. **Depends on.** U0 (synthetic), U1 (market), U6 for B6. **Status.** done, merged
-into `dev` (567eed8; branch @ 9802a06), not merged; 3/3 done-when; **E1–E4 under-powered** (SD > 0.025 at every window ≤ 1,008);
+into `dev` (567eed8; branch @ 9802a06); 3/3 done-when; **E1–E4 under-powered** (SD > 0.025 at every window ≤ 1,008);
 `results/reports/U08_estimators.md`, `U08_status.md`.
 
 ---
@@ -799,7 +799,7 @@ series for delay and false-alarm rate, with configurations frozen before market 
 of the `diag` warm-up (no model yet) handled as "no gate" and counted; the NIG prior not centred on reversion.
 
 **Cost.** 1½–2 sessions. **Depends on.** U8. **Status.** done, merged into `dev` (e1b4ea0; branch @ 2ac613c, stacked on
-`unit/08-estimators`), not merged; 2/2 done-when; R2 beats B4 on synthetic regimes but invents regimes without them;
+`unit/08-estimators`); 2/2 done-when; R2 beats B4 on synthetic regimes but invents regimes without them;
 R1 ≈ B1; R3 conservative; `results/reports/U09_detection.md`, `U09_status.md`.
 
 ---
